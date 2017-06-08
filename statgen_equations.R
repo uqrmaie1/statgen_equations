@@ -1,0 +1,2945 @@
+#' ---
+#' title: "A practical introduction to some theoretical concepts in quantitative genetics."
+#' header-includes:
+#' - \usepackage{amssymb}
+#' - \usepackage[utf8]{inputenc}
+#' - \usepackage{titling}
+#' - \usepackage{xcolor}
+#' - \usepackage{bm}
+#' output:
+#'   html_document:
+#'     fig_height: 4
+#'     fig_width: 5
+#'     toc: yes
+#'     toc_depth: 3
+#'   pdf_document:
+#'     toc: yes
+#'     toc_depth: '3'
+#'   word_document:
+#'     toc: yes
+#'     toc_depth: '3'
+#' always_allow_html: yes
+#' ---
+#' 
+## ----setup, include=FALSE------------------------------------------------
+libs = c('reshape2',
+         'ggplot2',
+         'grid',
+         'gridExtra',
+         'RColorBrewer',
+         'scales',
+         'dplyr',
+         'rgl',
+         'MASS',
+         'mgcv',
+         'knitr')
+for(lib in libs) {
+  suppressPackageStartupMessages(suppressMessages(suppressWarnings(library(lib, character.only = TRUE))))
+}
+
+knitr::opts_chunk$set(echo = TRUE)
+out_type = knitr::opts_knit$get("rmarkdown.pandoc.to")
+
+#' 
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' ----
+#' 
+#' ## Introduction
+#' 
+#' 
+#' The purpose of this document is to give an overview over frequently occurring quantities in quantitative genetics and to demonstrate how to they can be validated in R examples using simulated genotype data.
+#' 
+#' Since the focus here is on how different concepts relate to one another, many topics are presented in a simplified way that ignores complicating factors that sometimes arise in the application to real data.
+#' 
+#' For questions, and any kind of feedback (especially mistakes), please contact Robert Maier at <r.maier@uq.edu.au>.
+#' 
+#' ----
+#' 
+#' \ 
+#' 
+#' 
+#' ## Notation
+#' 
+#' Symbol                         Meaning
+#' ---------------------------    ----------------------------------------------------------
+#' $\textbf{X}_{012}$             Original genotype matrix
+#' $\textbf{X}^*$                 Mean-centered genotypes
+#' $\textbf{X}$                   Scaled genotypes (each SNP has mean 0, variance 1)
+#' $\textbf{y}$                   Phenotype
+#' $p$                            Minor Allele Frequency (MAF)
+#' $M$                            Number of SNPs
+#' $N$                            Number of individuals
+#' $M_e$                          Effective number of SNPs
+#' $N_e$                          Effective number of individuals
+#' $\textbf{A}$                   Genetic relatedness matrix (GRM)
+#' $\textbf{V}$                   Variance-covariance matrix of the phenotype
+#' $\textbf{I}_M$                 Identity matrix of dimension $M \times M$
+#' $\beta^*$                      Effect of a SNP (assumes unscaled genotypes)
+#' $\beta$                        Effect of a SNP (assumes scaled genotypes)
+#' $g$                            Genetic effect of an individual
+#' $i$                            Index for individuals
+#' $j$                            Index for SNPs
+#' $\sigma^2_y$                   Phenotypic variance. Often assumed to be 1. $\sigma^2_g + \sigma^2_e$
+#' $\sigma^2_g$                   Genetic variance
+#' $\sigma^2_e$                   Error variance
+#' $h^2$                          SNP-heritability. $\frac{\sigma^2_g}{\sigma^2_y}$
+#' $\hat{p}$                      Estimate of $p$
+#' $\bar{p}$                      Mean of $p$
+#' $var(\textbf{y})$              (Scalar) variance of $y$ (usually 1 here)
+#' $Var[\textbf{y}]$              Variance-covariance matrix of the random variable $\textbf{y}$
+#' \ 
+#' 
+#' \ 
+#' 
+#' ----
+#' 
+#' ## Summary of Equations
+#' 
+#' 
+#' Quantity                                                                          Definition
+#' --------------------------------------                                            ----------------------------------------------------------------------------
+#' **Genotype properties**
+#' MAF estimate for a SNP $j$                                                        $\hat{p}_j = \frac{\bar{\textbf{X}}_{012,j}}{2}$
+#' Expected MAF sampling variance                                                    $SE^2_{p_j} = var(\hat{p_j} \mid p_j) = \frac{\hat{p_j}(1-\hat{p_j})}{2N}$
+#' Expected variance of a SNP                                                        $var(\textbf{X}_{012,j}) = 2\hat{p_j}(1-\hat{p_j})$                                      
+#' LD matrix                                                                         $\textbf{L} = \frac{\textbf{X}^\top\textbf{X}}{N}$
+#' GRM                                                                               $\textbf{A} = \frac{\textbf{X}\textbf{X}^\top}{M}$
+#' LD score of a SNP                                                                 $l_j = \frac{1}{N^2}\textbf{X}^\top_j\textbf{X}\textbf{X}^\top\textbf{X}_j$
+#' **SNP effect estimates**                                                       
+#' OLS effect estimate for model with one SNP ($\hat{\beta}_{GWAS}$)                 $\hat{\beta}_{j,GWAS} = \frac{\textbf{X}_j^\top \textbf{y}}{\textbf{X}_j^\top\textbf{X}_j} = \frac{cov(\textbf{X}_j, \textbf{y})}{var(\textbf{X}_j)}$
+#' Mixed linear mode association (MLMA) estimate for one SNP                         $\hat{\beta}_{j,MLMA} = \frac{\textbf{X}_j^\top \textbf{V}^{-1}\textbf{y}}{\textbf{X}_j^\top \textbf{V}^{-1}\textbf{X}_j}$
+#' OLS effect estimate for model with all SNPs ($\hat{\boldsymbol{\beta}}_{OLS}$)    $\hat{\boldsymbol{\beta}}_{OLS} = (\textbf{X}^\top\textbf{X})^{-1}\textbf{X}^\top \textbf{y}$                                       
+#' BLUP effect estimate                                                              $\hat{\boldsymbol{\beta}}_{BLUP} = (\textbf{X}^\top\textbf{X} + \lambda \textbf{I})^{-1}\textbf{X}^\top \textbf{y}$
+#' **Precision of SNP effect estimates**
+#' Expected sampling variance of $\hat{\beta^*}_{j,GWAS}$                            $SE^2_{\hat{\beta^*}_j} = var(\hat{\beta^*}_j \mid \beta^*_j) \approx \frac{1}{N \times var(\textbf{X}_j)}$
+#' Expected sampling variance of $\hat{\beta}_{j,GWAS}$                              $SE^2_{\hat{\beta}_j} = var(\hat{\beta}_j \mid \beta_j) \approx \frac{1}{N}$
+#' Expected variance of $\hat{\beta}_{j,GWAS}$ assuming independent markers          $var(\hat{\beta}_j) = var(\beta_j) + var(\hat{\beta_j} \mid \beta_j) = \frac{h^2}{M} + \frac{1}{N}$
+#' Expected variance of $\hat{\beta}_{j,GWAS}$                                       $var(\hat{\beta}_j) = \frac{h^2}{M_e} + \frac{1}{N}$    
+#' Expected accuracy of GWAS predictor                                               $cor^2(\textbf{y}, \hat{\textbf{g}}_{GWAS}) = \frac{h^2}{1+\frac{M_e}{N h^2}}$        
+#' Expected accuracy of BLUP predictor                                               $cor^2(\textbf{y}, \hat{\textbf{g}}_{BLUP}) = R^2 = \frac{h^2}{1+\frac{M_e (1-R^2)}{N h^2}}$         
+#' 
+#' \ 
+#' 
+#' \ 
+#' 
+#' 
+#' ----
+#' 
+#' ## The structure of genotype data
+#' \ 
+#' 
+#' ### Simulating genotypes
+#' 
+#' Humans have diploid genomes, so at each biallelic SNP, there are $2 \times 2$ possible combinations of alleles at each locus. Since we don't usually distinguish between, say $AG$ and $GA$, we are left with 3 distinct genotypes, which means that we can code genotypes for each SNP and individual as 0, 1 or 2, which can be interpreted as 0, 1 or 2 alternative alleles.
+#' 
+#' Under a random mating assumption, the number of alternative alleles for a SNP and individual follows a [binomial distribution](https://en.wikipedia.org/wiki/Binomial_distribution) with 2 draws (one from mum and one from dad) and probability equal to the minor allele frequency of that SNP.
+#' 
+#' Let's assume that the minor allele frequency of our $M$ SNPs come from a uniform distribution between $0$ and $0.5$.
+#' 
+## ----create_genotypes0---------------------------------------------------
+#set.seed(6147)
+#set.seed(6154)
+set.seed(6155)
+m = 500                                  # number of SNPs
+maf = runif(m, 0, .5)                    # random MAF for each SNP
+# apologies if using "=" as the assignment operator in R makes your eyes hurt
+
+#' 
+#' The ```set.seed``` command here ensures that the random draws from a distribution will be the same each time this code is run.
+#' We can then draw genotypes for one person for each SNP.
+#' 
+## ----create_genotypes1---------------------------------------------------
+x012 = rbinom(m, 2, maf)
+
+#' 
+#' We want genotypes for $N$ individuals, so let's replicate this $N$ times.
+#' 
+#' 
+## ----create_genotypes3---------------------------------------------------
+n = 400                                    # number of individuals
+x012 = t(replicate(n, rbinom(m, 2, maf)))  # n x m genotype matrix
+
+#' 
+#' If we are unlucky, some SNPs will be monomorphic, so not actually vary between people. Since this can cause problems, let's simulate more SNPs and only keep $M$ polymorphic ones.
+#' 
+## ----create_genotypes4---------------------------------------------------
+x012 = t(replicate(n, rbinom(2*m, 2, c(maf, maf))))
+polymorphic = apply(x012, 2, var) > 0
+x012 = x012[,polymorphic][,1:m]
+maf = c(maf, maf)[polymorphic][1:m]
+round(maf[1:10], 2)
+x012[1:5, 1:10]
+
+#' 
+#' Later on, we will not only need the original genotype matrix $\textbf{X}_{012}$, but also a version in which each SNP is mean-centered, $\textbf{X}^*$, and a version in which each SNP has mean 0 and variance 1, $\textbf{X}$.
+#' 
+## ----create_genotypes5---------------------------------------------------
+x_o = scale(x012, scale=FALSE)               # mean 0
+x = scale(x012, scale=TRUE)                  # mean 0, variance 1
+
+#' 
+#' Working with mean-centered genotypes and phenotypes makes life a lot easier, but it means we don't have to estimate intercept terms. So a model like this:
+#' 
+#' $$\textbf{y} \sim \beta_0 + \beta_1 \textbf{x} + \textbf{e}$$
+#' 
+#' just becomes
+#' 
+#' $$\textbf{y} \sim \beta \textbf{x} + \textbf{e}$$
+#' Similarly, assuming that there are no covariates, or that $y$ has already been corrected for any covariates, makes things a lot simpler as well.
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' \ 
+#' 
+#' 
+#' ### MAF estimate
+#' 
+#' Here, we know what the true MAF is for each SNP ($p$), because we have simulated it, but in real data we will have to get an estimate based on a finite sample. For a diploid genome coded in 0 and 1, this estimate would just be the mean across individuals, but since we have a diploid genome, it is the mean divided by two.
+#' 
+#' $$\hat{p}_j = \frac{\bar{\textbf{X}}_{012,j}}{2}$$
+#' 
+## ----meanx_example, fig.cap = '**True (population) and estimated (sample) minor allele frequency**'----
+maf_est = colMeans(x012)/2
+qplot(maf, maf_est, col=maf) +
+  geom_abline() + xlab('p') + ylab(expression(hat(p)))
+
+#' \ 
+#' 
+#' Strictly speaking, we are estimating the frequency of the alternative allele (the one coded as 2 when homozygous), but since we simulated MAFs in the range [0, 0.5], we can talk about the minor allele frequency.
+#' 
+#' 
+#' ### Sampling variance of MAF estimates
+#' 
+#' For most SNPs we get a reasonable MAF estimate. If we want to dig deeper, we can also quantify how close our MAF estimate is, on average, to the true value. So we want to know what $p_j - \hat{p}_j$ is, on average. If we have an unbiased estimate, $p_j - \hat{p}_j$ will be zero on average, but it is also interesting what the variance of this quantity is:
+#' $$SE^2_{\hat{p}_j} = var(\hat{p}_j \mid p_j) = var(\hat{p}_j - p_j)$$
+#' 
+#' This is called the sampling variance, or the (squared) standard error. Very often when the standard error is mentioned, it is about the standard error of a mean estimate, which is
+#' $$SE^2_{\bar{x}} = \frac{var(x)}{N}$$
+#' 
+#' However, any kind of estimate has a standard error, and it is not always as straight forward to calculate. In this case here, we want to know the sampling variance of the MAF estimate, which is in fact the standard error of a mean estimate, because the MAF estimate is the mean of the genotype values divided by two. So:
+#' 
+#' $$SE^2_{\hat{p}_j} = var(\hat{p}_j - p_j) = \frac{var(\frac{\textbf{X}_j}{2})}{N} = \frac{var(\textbf{X}_j)}{4N}$$
+#' 
+#' Since it depends on a finite sample, the standard error is itself an estimate and should get a hat.
+#' 
+#' $$\hat{SE}^2_{\hat{p}_j} = \frac{var(\textbf{X}_j)}{4N}$$
+#' 
+#' But we're short on hats, so some quantities will be missing them even though they should have them.
+#' 
+#' The variance of a genotype can be estimated as $var(\textbf{X}_j) = 2p_j(1-p_j)$
+#' 
+#' So the standard error of $\hat{p}_j$ can be also estimated as
+#' 
+#' $$\hat{SE}^2_{\hat{p}_j} = \frac{\hat{p}_j (1-\hat{p}_j)}{2N}$$
+#' 
+#' Let's see how this estimated standard error of $\hat{p}_j$ compares to the actual fluctuation of $\hat{p}_j$ around $p_j$. For this we have to group SNPs by MAF, because the standard error of $\hat{p}_j$ depends on $p_j$.
+#' 
+#' 
+## ----sampling_varx, fig.cap = '**MAF standard error estimate vs actual variance of the MAF estimate**'----
+ss = .02
+sequ = seq(0, max(maf_est), ss)
+bins = cut(maf_est, sequ)
+binMeans = (sequ + ss/2)[-length(sequ)]
+dat = data.frame(observed=tapply(colMeans(x012)/2 - maf, bins, var),
+                expected=binMeans*(1-binMeans)/(2*n),
+                binNum=1:length(binMeans))
+
+ggplot(dat, aes(expected, observed)) +
+  geom_text(aes(label=binNum, col=binMeans)) +
+  geom_abline() +
+  xlab(expression(paste(hat(SE)[hat(p)]^2, "  (",hat(var),"(", hat(p), " | p))"))) +
+  ylab(expression(paste("var(",hat(p)," | p)")))
+
+#' 
+#' So for the higher MAF bins the empirical $var(\hat{p}_j - p_j)$ is not very well estimated by our estimate of $SE^2_{\hat{p}_j}$. In other words, the standard error of the standard error estimate of $\hat{p}_j$ gets larger with $p_j$. Determining $\hat{SE}^2_{\hat{SE}^2_{\hat{p}_j}}$, or $var(\hat{var}(\hat{p}_j \mid p_j) \mid var(\hat{p}_j \mid p_j))$ is left as an exercise for the reader.
+#' 
+#' 
+#' \ 
+#' 
+#' ### Variance of a genotype
+#' 
+#' I mentioned before that the variance of a genotype for a SNP can be estimated as
+#' 
+#' $$var(x) = 2\hat{p}(1-\hat{p})$$
+#' 
+#' This is simply the expected variance of a binomially distributed random variable.
+#' 
+#' At the same time this is the expected frequency of heterozygous genotypes under Hardy-Weinberg equilibrium.
+#' 
+#' 
+## ----varx, fig.width=8, fig.height=4, fig.cap='**Genotype variance**'----
+varx = apply(x012, 2, var)
+p1 = qplot(2*maf*(1-maf), varx, col=maf) + geom_abline()
+# genotype frequencies
+p2 = ggplot(data.frame(x=c(0, 1)), aes(x)) +
+  stat_function(fun=function(x) 2*x*(1-x), col='red') +
+  stat_function(fun=function(x) x^2, col='green') +
+  stat_function(fun=function(x) (1-x)^2, col='blue') +
+  ylim(c(0,1)) +
+  xlab('allele frequency') +
+  ylab('genotype frequencies / variance of x (red)')
+grid.arrange(p1, p2, ncol=2)
+
+
+#' 
+#' The red curve shows the genotype variance / average heterozygosity as a function of $p$.
+#' 
+#' 
+#' \ 
+#' 
+#' ### Linkage disequilibrium (LD) Matrix
+#' 
+#' SNPs are often correlated with one another. Especially when they are nearby, since recombination rarely breaks up any correlation between them. This correlation between a pair of SNPs (two columns in $\textbf{X}$) is called linkage disequilibrium (LD) and can be estimated by calculating the correlation coefficient between the SNP genotypes.
+#' 
+#' The LD matrix contains the correlations of all SNP pairs in the genotype matrix and has therefore dimensions $M \times M$. Since correlation implicitly scales by the variance,
+#' 
+#' $$cor(x,y) = \frac{cov(x,y)}{\sqrt{var(x)var(y)}}$$
+#' 
+#' it doesn't matter whether the scaled or unscaled genotype matrix is used. Further, when $\textbf{X}$ is already scaled, the covariance matrix is the same as the correlation matrix, so the LD matrix can be calculated as:
+#' 
+#' $$\textbf{L} = \frac{\textbf{X}^\top\textbf{X}}{N}$$ 
+#' 
+#' The following should all result in approximately the same LD matrices.
+#' 
+## ----ld_matrix-----------------------------------------------------------
+ld1 = cor(x012)
+ld2 = cor(x)
+ld3 = cov(x)
+ld4 = (t(x) %*% x) / n
+
+#' 
+#' The reason why the last one is slightly different is because ```cov``` (and ```var```) in ```R``` divide by (n - 1) rather than by n (see [Bessel's correction](https://en.wikipedia.org/wiki/Bessel's_correction)).
+#' \ 
+#' 
+#' ### LD scores
+#' 
+#' For some applications, such as LD score regression, it is useful to calculate the LD score of a SNP. This is defined as the sum of squared correlations of a SNP $j$ with all other SNPs:
+#' 
+#' $$l_j = \sum_{k=1}^Mcor^2(\textbf{X}_j, \textbf{X}_k)$$
+#' Since $\textbf{X}$ is standardized, we can just calculate the sum of the squared sample correlations like this:
+#' 
+#' $$\widetilde{l}_{j} = \frac{1}{N^2}\textbf{X}^\top_j\textbf{X}\textbf{X}^\top\textbf{X}_j$$
+#' However, this is not an unbiased estimate. We can correct for the bias like this:
+#' 
+#' $$l_j = \frac{\widetilde{l}_{j} N - M}{N + 1}$$
+#' 
+#' 
+#' 
+## ----ld_scores, fig.cap='**LD scores before and after correcting for biased estimates**'----
+ldscores_sample = colSums(ld1^2)
+ldscores = (ldscores_sample*n - m) / (n + 1)
+
+qplot(ldscores, ldscores_sample, col=ldscores) +
+  xlim(c(min(ldscores), max(ldscores))) +
+  ylim(min(ldscores), max(ldscores_sample)) +
+  geom_abline() +
+  scale_colour_continuous(low='black', high='green')
+
+#' 
+#' **In the simulations without LD, LD scores should be centered around one.**
+#' 
+#' 
+#' \ 
+#' 
+#' ### Genetic relatedness matrix (GRM)
+#' 
+#' The genetic relatedness between two individuals (two rows in $\textbf{X}$) can be estimated as the covariance of the genotypes for these individuals across all SNPs. The GRM contains estimates of the genetic similarity for all pairs of individuals and can be calculated as the covariance matrix of the transposed scaled genotype matrix.
+#' 
+#' The GRM is actually a genetic similarity matrix. For a genotype in two individuals we want to know if it comes from the same ancestor (identity by descent (IBD)), but we can only measure if it is the same or not (identity by state (IBS)).
+#' 
+#' It can be calculated as:
+#' 
+#' $$\textbf{A} = \frac{\textbf{X}\textbf{X}^\top}{M}$$
+#' 
+#' 
+#' This is very similar to the definition of the LD matrix, but will be a $N \times N$ instead of a $M \times M$ matrix. Also, since $\textbf{X}$ is usually scaled to have equal variance across SNPs, not across individuals, the diagonal elements on the GRM usually differ from one.
+#' 
+#' The similarity between the GRM ($\approx \textbf{X}\textbf{X}^\top$) and the LD matrix ($\approx \textbf{X}^\top\textbf{X}$) explains why models which depend on the GRM often have an equivalent form which depends on the LD matrix.
+#' 
+## ----grm, fig.cap='**Histogram of GRM values**'--------------------------
+grm = (x %*% t(x))/m
+grm2 = cov(t(x))
+
+p1 = ggplot(melt(grm), aes(value)) + geom_histogram(bins=100) 
+p2 = ggplot(melt(grm), aes(value)) + geom_histogram(bins=100) +
+  coord_cartesian(ylim=c(0,n)) + theme(panel.background=element_blank())
+grid.arrange(p1, p2, layout_matrix=matrix(c(1,1,2,1), 2))
+
+#' 
+#' Offdiagonal elements represent the relatedness between two individuals (in histogram the large peak centered at 0). Diagonal elements represent the relatedness of an individual with itself, which is the average homozygosity or the level of inbreeding (in histogram the small peak centered at 1). While the LD of a SNP with itself is 1 by definition, the genetic relatedness of an individual with itself can vary around one, because the genotype scaling is performed per SNP, not per individual.
+#' \ 
+#' 
+#' ### Genetic principal components
+#' 
+#' The GRM can be used to calculate genetic principal components via singular value decomposition (SVD) of the mean-centered genotype matrix or via eigendecomposition of the GRM. ([Comparison of Eigendecomposition and SVD](http://stats.stackexchange.com/questions/134282/relationship-between-svd-and-pca-how-to-use-svd-to-perform-pca))
+#' 
+#' Principal component analysis (PCA) can be used to rotate a matrix in such a way, that each column (principal component) is orthogonal to each other column and the columns are sorted by the amount of variance explained. In genome wide genetic data, the first principal components usually capture ancestry or population stratification and can therefore be used to correct for these confounding factors. 
+#' 
+## ----pca_1---------------------------------------------------------------
+xt = scale(t(x), scale=F) # transpose and mean center across individuals
+
+principal_axes_eigen        = eigen(grm2)$vectors
+principal_axes_svd          = svd(xt)$v
+principal_axes_prcomp       = prcomp(xt)$rotation
+
+principal_components_eigen  = xt %*% eigen(grm2)$vectors
+principal_components_svd1   = xt %*% svd(xt)$v
+principal_components_svd2   = svd(xt)$u %*% diag(svd(xt)$d)
+principal_components_prcomp = prcomp(xt)$x
+
+#' 
+#' The above shows different ways to calculate genetic principal components. While the results are the same, the runtime can differ greatly.
+#' 
+## ----pca_2---------------------------------------------------------------
+cor(principal_components_eigen[,1], principal_components_eigen[,2])
+
+#' 
+#' All principal components are orthogonal to each other, so uncorrelated.
+#' 
+## ----pca_3, fig.width=8, fig.height=4, fig.cap='**Genotype principal components**'----
+p1 = qplot(1:min(n,m), prcomp(xt)$sdev^2) + xlab('rank') + ylab('eigenvalues')
+p2 = qplot(principal_components_eigen[,1], principal_components_eigen[,2]) +
+  xlab('PC1') + ylab('PC2')
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' **Left: The eigenvalues of the GRM indicate what proportion of variance in the genotype is explained by the corresponding genetic principal component. Eigenvectors are sorted by the order of their eigenvalues, so the first principal components always explain more variance than the subsequent ones. Right: No structure in the simulated genotype data.**
+#' 
+#' 
+#' ### Simulating genotypes with LD
+#' 
+#' Real genotype data has LD, and to demonstrate some concepts, we have to briefly leave our cozy fantasy world of only independent SNPs.
+#' 
+## ----simu_ld1, fig.width=8, fig.cap='**LD matrix in data without and with LD.**'----
+x012ld = jitter(x012[,rep(1:m, 1:m)[1:m]], .03)
+xld = scale(x012ld)
+ldld = (t(xld) %*% xld)/n
+grmld = (xld %*% t(xld))/m
+ldscores_sampleld = colSums(ldld^2)
+ldscoresld = (ldscores_sampleld*n - m) / (n + 1)
+varxld = apply(x012ld, 2, var)
+
+greens = colorRampPalette(c('black', 'green'))(12)
+par(mfrow=c(1,2))
+image(ld1, col=greens)
+image(ldld, col=greens)
+par(mfrow=c(1,1))
+
+#' 
+#' 
+#' 
+#' 
+#' ### Effective number of SNPs
+#' 
+#' When there is LD between SNPs, it is useful to have a quantity that describes how many independent SNPs there are. This is the effective number of SNPs, markers or chromosome segments ($M_e$), and can be defined as
+#' 
+#' $$M_{e} = \frac{M}{\bar{\boldsymbol{l}}} = \frac{M^2}{\sum_j l_j}$$
+#' where $\bar{\boldsymbol{l}}$ denotes the mean LD score across all SNPs.
+#' 
+#' 
+#' In practice, LD scores are often calculated based on a limited number of SNPs (for example 2000 kb or 1 centimorgan), which makes them smaller, so they can't be used to calculate $M_{e}$.
+#' 
+#' Because of the similarity of $\textbf{A}$ and $\textbf{L}$, $M_e$ can also be approximated as
+#' 
+#' $$M_{e} \approx \frac{1}{\mathbb{E}[\textbf{A}^2_{i,j}]} \approx \frac{1}{var(\textbf{A}_{i,j})}$$
+#' 
+#' where $\textbf{A}_{i, j}$ denotes all offdiagonal elements of $\textbf{A}$.
+#' 
+## ----meff2---------------------------------------------------------------
+m
+(me = m/mean(ldscores))
+1/var(grm[upper.tri(grm)])
+(meld = m/mean(ldscoresld))
+1/var(grmld[upper.tri(grmld)])
+
+#' 
+#' $M_e$ is smaller than the number of LD blocks in the data with LD. This is because larger blocks have higher weight.
+#' 
+#' In an average European population of unrelated individuals $M_e$ is between 60,000 and 70,000.
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' ### Effective population size
+#' 
+#' The effective population size ($N_e$) is the number of individuals that an idealized population would have to have to result in the parameters that are being observed in the real population and can be estimated in different ways, depending on what parameters are of interest.
+#' 
+#' Due to the symmetry of $\textbf{A}$ and $\textbf{L}$, $N$ and $M$, one could expect that it can be simply estimated as $\frac{1}{\mathbb{E}[\textbf{L}^2_{i,j}]}$, but it is in fact better approximated by:
+#' 
+#' $$N_e \approx \frac{1}{4 c \times \mathbb{E}[\textbf{L}^2_{i,j}]} \approx \frac{1}{4 c \times var(\textbf{L}_{i,j})}$$
+#' where $4$ accounts for the fact that humans have diploid, not haploid genomes and $c$ is the recombination rate. The absence of a term equivalent to $c$ in the estimation of $M_e$ reflects the assumption of random mating and thus an unstructured population.
+#' 
+## ----neff----------------------------------------------------------------
+n
+1/var(ld1[upper.tri(ld1)])
+# estimate of recombination rate in this particular case
+recomb = sqrt(2*m)/m
+1/(var(ldld[upper.tri(ldld)]) * recomb)
+
+#' 
+#' 
+#' Estimates of $N_e$ in human populations range from around 2,500 in European and Asian populations to around 6,000 in African populations, while $c$ is around 0.01 per Mb.
+#' 
+#' \ 
+#' 
+#' 
+#' ----
+#' 
+#' ## SNP effects - basics
+#' 
+#' While the previous parts have been fun, quantitative genetics really on becomes interesting when it is studied in combination with one or more phenotypes, for example to estimate the effect that a SNP has on a phenotype. Here I will first describe a model to simulate phenotypes from genotypes, and then talk about different ways to estimate SNP effects.
+#' 
+#' ### Modeling a phenotype
+#' 
+#' A particular phenotype $y$ of an individual $i$ can be modeled as a combination of a genetic component, $g$, and an error component $e$:
+#' 
+#' $$y_i = g_i + e_i$$
+#' 
+#' Some researchers choose to focus on the $e$ component and distinguish between environmental effects and various sources of error, but we will focus on the $g$ component and model $e$ as a normally distributed random variable which is independent of $g$.
+#' 
+#' Here, we set up a model which says that the similarity (or differences) between our $N$ individuals can be partitioned into a genetic component and an environmental / error component.
+#' $$
+#' Var[\textbf{y}] = Var[\textbf{g} + \textbf{e}] = Var[\textbf{g}] + Var[\textbf{e}]
+#' $$
+#' 
+#' $\textbf{g}$ and $\textbf{e}$ are independent by definiton, so the variance of the sum is the sum of the variances ([https://en.wikipedia.org/wiki/Variance#Basic_properties](otherwise there would be a covariance term)).
+#' 
+#' 
+#' $Var[\textbf{y}]$, $Var[\textbf{g}]$ and $Var[\textbf{e}]$ are all $N \times N$ variance-covariance matrices of the phenotypes, the genetic effects and the environmental effects.
+#' 
+#' In contrast, the scalar variances $\sigma^2_y$, $\sigma^2_g$ and $\sigma^2_e$, represent the variances of the phenotype, the total genetic effect and the environmental effect, respectively.
+#' 
+#' $$\sigma^2_y = \sigma^2_g + \sigma^2_e$$
+#' 
+#' So what is Var[e]? If we assume that the error term is independent and identically distributed (i.i.d.) for each individual, then
+#' 
+#' $$Var[\textbf{e}] = \sigma^2_e \textbf{I}_N$$
+#' 
+#' where $I_N$ is a $N \times N$ identity matrix.
+#' 
+#' What about $Var[\textbf{g}]$? $g_j$ is the genetic part of the phenotype of an individual (also called genetic value or breeding value). The genotype of an individual is comprised of $M$ markers, each of which has a contribution proportional to the general effect size of this marker, $\beta_j$, and the number of effect alleles (0, 1 or 2):
+#' 
+#' $$g_i = \sum_{j} X_{ij} \beta_{j}$$
+#' 
+#' Written in matrix notation for all individuals, this becomes
+#' 
+#' $$g = \textbf{X}^\top \boldsymbol{\beta}$$
+#' 
+#' So $Var[\textbf{g}] = Var[\textbf{X} \boldsymbol{\beta}]$. Part of our model assumption is that we see SNP effects as random (they are drawn from a probability distribution), but genotypes as fixed (even though we also drew genotypes from a probability distribution to simulate them). This allows to write
+#' 
+#' $$Var[\textbf{X} \boldsymbol{\beta}] = \textbf{X} Var[\boldsymbol{\beta}] \textbf{X}^\top$$
+#' This is just a more general form of the rule $var(ax) = a^2 var(x)$, for a constant $a$ and random variable $x$.
+#' If we assume that the true SNP effects are all i.i.d., and that the variances of all SNP effects add up to $\sigma^2_g$, then
+#' $$Var[\boldsymbol{\beta}] = \frac{\sigma^2_g}{M} \textbf{I}_{M}$$
+#' and so
+#' 
+#' $$Var[\textbf{X} \boldsymbol{\beta}] = \textbf{X} (\frac{\sigma^2_g}{M} \textbf{I}_{M}) \textbf{X}^\top = \frac{\sigma^2_g}{M} \textbf{X}\textbf{X}^\top$$
+#' 
+#' $\frac{\textbf{X}\textbf{X}^\top}{M}$ is the GRM, so
+#' 
+#' $$Var[\textbf{g}] = \sigma^2_g \textbf{A} $$
+#' 
+#' Putting it all together, we get
+#' $$ Var[\textbf{y}] = \sigma^2_g \textbf{A} + \sigma^2_e \textbf{I}_N  $$
+#' 
+#' This is the model on which our phenotype simulations will be based and it is also the model underlying many other quantitative genetics methods.
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Limitations of the model
+#' 
+#' All models are wrong; some models are useful. Most of this document describes how the model specified above is useful, but it is important to keep in mind the extent to which it is wrong.
+#' 
+#' #### No non-genetic effects
+#' 
+#' Apart from the inclusion of fixed effects, which is omitted here for simplicity, the model doesn't account for environmental effects. Specifically, the equation $Var[\textbf{y}] = \sigma^2_g \textbf{A} + \sigma^2_e \textbf{I}_N$ states that the phenotypic similarity among individuals is partly due to genetic factors, and that the GRM tells us who should be similar to whom, and partly due to other factors, which are unique for each individual, and independent of their genetic relatedness. This assumption would not be justified when working with close relatives - close relatives share environments as well as genes. It is less problematic in unrelated individuals.
+#' 
+#' #### No dominance effects
+#' 
+#' Another assumption of our model is that for each SNP the effect of having two copies of the alternative allele is twice that of having on copy. In other words, we assume complete additivity and no dominance effects. This is not as bad as it sounds because the dominance effect is only whatever is left after removing the additive effect, and empirical data suggests that this is usually not a lot.
+#' 
+#' #### No epistasis
+#' 
+#' Dominance can be seen as interaction effects of a SNP with itself, and epistasis describes interaction effects among different SNPs. For example if there is a SNP which leads to a gene knockout, the effect of another SNP which can lead to a knockout of the same gene will depend on the first SNP. It seems at first that these effects should be ubiquitous, but as with dominance effects, empirical evidence does not suggest that all epistatic effect together explain as much variance as the additive effects alone, partially because the interaction effects are again only what is left after accounting for additive effects.
+#' 
+#' That's very useful, because the number of interactions among SNPs can grow very rapidly, which makes it hard to test them exhaustively. With $M$ SNPs, there are $\frac{M(M-1)}{2}$ pairwise interactions, and pairwise interactions are only the simplest kind.
+#' 
+#' 
+#' #### Effect size distribution
+#' 
+#' Although so far we have not specified any distribution of effect sizes, in the next section we will do so by drawing effects from a normal distribution. This makes the model more tractable, but is not a good approximation for traits with a few loci of large effects. However, for many polygenic traits this does not impose a great limitation, even if the true effect size distribution is not exactly normal. There are many tools and methods which try to better model a wide range of traits by assuming a different distribution of SNP effect sizes.
+#' 
+#' \ 
+#' 
+#' 
+#' ### Simulating a phenotype
+#' 
+#' According to the model described above we will simulate our phenotypes. Here we will assume that all SNPs have an effect and that their effect size follows a normal distribution.
+#' 
+## ----simulate_beta-------------------------------------------------------
+h2 = 0.5
+beta = rnorm(m, 0, sqrt(h2/m))
+beta_o = beta/sqrt(varx)
+g = x_o %*% beta_o
+# equivalent to g = x %*% beta
+e = rnorm(n, 0, sqrt(1-h2))
+y = g + e
+
+var(y) # should be around 1
+
+#' 
+#' Same for the data with LD:
+#' 
+## ----simu_ld2, fig.width=8-----------------------------------------------
+gld = xld %*% beta
+eld = rnorm(n, 0, sqrt(1-h2))
+yld = gld + eld
+
+#' 
+#' 
+#' Here we assume that the (SNP-)heritability is 0.5, and that the effect that each SNP has on the (scaled) phenotype assuming scaled genotypes (effect of $\boldsymbol{\beta}$ on $\textbf{y}$ assuming $\textbf{X}$) is drawn from a normal distribution with mean 0 and variance $\frac{h^2}{M}$.
+#' 
+#' The effect of $\boldsymbol{\beta}$ given $\textbf{X}$ is identical to the effect of $\boldsymbol{\beta}^*$ given $\textbf{X}^*$:
+#' $$\textbf{X}\boldsymbol{\beta} = \textbf{X}^*\boldsymbol{\beta}^*$$
+#' because
+#' $$\beta_j = \beta^*_j \times \sqrt{var(\textbf{X}_j)}$$
+#' and
+#' $$X_{ij} = \frac{X^*_{ij}}{\sqrt{var(\textbf{X}_j)}}$$
+#' 
+#' 
+#' 
+#' 
+#' but by drawing $\boldsymbol{\beta}$ from a normal distribution, not $\boldsymbol{\beta}^*$, we ensure that $\boldsymbol{\beta}$ is independent of $p$, but $\boldsymbol{\beta}^*$ is not. Absolute values of $\boldsymbol{\beta}^*$ will be larger for rare SNPs (low $p$). This models the expectation from natural selection which predicts that common variants will on average have smaller effects than rare variants. The seemingly innocuous scaling of genotypes therefore has a profound impact on the way in which the phenotype is modeled. There is some debate over whether this model uses the right relation between minor allele frequency and effect size, but the fact remains that it is very convenient to assume that the variance explained per SNP is independent of minor allele frequency.
+#' 
+#' 
+## ----beta_u, fig.width=8, fig.height=4, fig.cap='**Relation between MAF and effect size**'----
+ma = function(x, n=10) stats::filter(x, rep(1/n, n), sides=2)
+p1 = qplot(maf, abs(beta), col=maf) +
+  geom_line(data=data.frame(maf=sort(maf), beta=ma(abs(beta)[order(maf)])),
+            col='red', size=1) +
+  xlab('p') + ylab(expression(beta)) +
+  theme(legend.position='none')
+p2 = qplot(maf, abs(beta_o), col=maf) +
+  geom_line(data=data.frame(maf=sort(maf), beta_o=ma(abs(beta_o)[order(maf)])),
+            col='red', size=1) +
+  xlab('p') + ylab(expression(paste(beta^"*"))) + theme(legend.position='none')
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' **$\boldsymbol{\beta}$ is independent of MAF, but $\boldsymbol{\beta}^*$ increases with smaller MAF.**
+#' 
+#' \ 
+#' 
+#' 
+#' \ 
+#' 
+#' ----
+#' 
+#' ## SNP effects - methods of estimation
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' ### OLS effect estimate for one SNP (simple linear regression, GWAS)
+#' 
+#' The simplest way to estimate the effect of a SNP on a quantitative trait is simple regression through [OLS](https://en.wikipedia.org/wiki/Ordinary_least_squares). Simple regression usually means that it is univariate, or one SNP at a time. This is what is done in GWAS. To contrast this with multivariate regression through OLS, I call the (marginal) estimates from univariate OLS $\hat{\boldsymbol{\beta}}_{GWAS}$ and the (conditional or joint) estimates from multivariate OLS $\hat{\boldsymbol{\beta}}_{OLS}$.
+#' 
+#' The effect estimate in a simple linear regression is defined as:
+#' 
+#' $$\hat{\boldsymbol{\beta}^*}_{j,GWAS} = \frac{\textbf{X}_{j}^{*\top} \textbf{y}}{\textbf{X}_{j}^{*\top}\textbf{X}^*_{j}}$$
+#' 
+#' Or for standardized effects:
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{j,GWAS} = \frac{\textbf{X}^\top_{j}\textbf{y}}{\textbf{X}^\top_{j}\textbf{X}_{j}} \approx \frac{\textbf{X}^\top_{j} \textbf{y}}{N}$$
+#' 
+## ----ols_single, fig.width=8, fig.height=4, fig.cap='**GWAS effect estimates**'----
+beta_gwas = t(x) %*% y / diag(t(x) %*% x)
+beta_o_gwas = t(x_o) %*% y / diag(t(x_o) %*% x_o)
+
+beta_gwasld = (t(xld) %*% yld) / n
+beta_o_gwasld = beta_gwasld / sqrt(varxld)
+
+p1 = qplot(beta_o, beta_o_gwas, col=maf) + geom_abline() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta, beta_gwas), 3))) +
+  theme(legend.position='none') +
+  xlab(expression(paste(beta^"*"))) +
+  ylab(expression(hat(paste(beta^"*"))[GWAS]))
+
+# compare this with lm
+beta_o_gwas_lm = sapply(1:m, function(i) lm(y ~ x_o[,i])$coefficients[2])
+p2 = qplot(beta_o_gwas, beta_o_gwas_lm, col=maf) + geom_abline() +
+  theme(legend.position='none') +
+  xlab(expression(hat(paste(beta^"*"))[GWAS])) +
+  ylab(expression(hat(paste(beta^"*"))[GWAS]~(lm)))
+
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' \ 
+#' 
+#' ### OLS effect estimate for all SNPs (multiple regression, OLS)
+#' 
+#' Rather than fitting one SNP at a time, we can also fit all SNPs at the same time. This will create effect estimates which are conditional on other SNPs.
+#' 
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{OLS} = (\textbf{X}^\top\textbf{X})^{-1}\textbf{X}^\top \textbf{y}$$
+#' 
+#' 
+#' 
+## ----ols_multiple, fig.width=8, fig.height=4, fig.cap='**True effects vs multiple regression (OLS) estimates**'----
+
+
+if(n >= m) {
+  beta_ols = solve(t(x) %*% x) %*% t(x) %*% y
+} else {
+    # pseudo beta_ols
+  beta_ols =  solve(t(x) %*% x + diag(m)*1e-6) %*% t(x) %*% y
+}
+beta_o_ols = beta_ols / sqrt(varx)
+p1 = qplot(beta_o, beta_o_ols, col=maf) + geom_abline() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_o, beta_o_ols), 3))) +
+  theme(legend.position='none') +
+  xlab(expression(hat(paste(beta^"*")))) +
+  ylab(expression(hat(paste(beta^"*"))[OLS]))
+
+# compare this with lm
+p2 = ggplot() + theme(panel.background = element_blank())
+if(n >= m) {
+  beta_o_ols_lm = lm(y ~ x_o)$coefficients[-1]
+  p2 = qplot(beta_o_ols, beta_o_ols_lm) + geom_abline()
+}
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' So what's the difference between the marginal single SNP GWAS model and the conditional multiple SNP OLS model? Imagine two SNPs with large, opposite effect size are in high LD. To the first model, this LD information is inaccessible, and because it can't control for the effect of the other SNP, it will calculate for each SNP an estimate of the combined effect of all the SNPs on the same haplotype block. In this case it means that the effects of both SNP cancel each other out and the GWAS estimate will be very small.
+#' 
+#' The conditional OLS estimate on the other hand will be able to differentiate between the effects of both SNP, given $N$ is large enough (unless the LD correlation is one). This property of multiple regression can lead to more accurate estimates of the true effects. In our genotype model, all SNPs are independent, so there is not a large difference between conditional and marginal effects. However, the small chance correlation between SNPs that arises through the sampling process is enough to make conditional effect estimates different from marginal effect estimates. On the other hand, conditional effect estimates may not always be what is desired. Let's assume that a haplotype block with many highly correlated SNPs contains only one SNP with a true, large effect. In a the marginal GWAS model, all correlated SNPs will pick up the signal from this one SNP. In the conditional OLS model, the effect may get smeared out over all correlated SNPs, if $N$ is not large enough to assign the effect to only the causal SNP. By smearing out the effect, none of the SNPs may be found to be significantly associated.
+#' 
+#' There is also a computational difference between the two models: The multiple regression model is slower because the inversion of $\textbf{X}^\top\textbf{X}$ can take time.
+#' 
+#' Another problem with this model is that it is prone to overfitting the data, as $\frac{M}{N}$ increases. This will lead to less accurate estimates of the true effect size. When $M > N$, it becomes impossible to apply this model, because $\textbf{X}^\top\textbf{X}$ will become singular. This problem is being addressed by the BLUP model.
+#' 
+#' \ 
+#' 
+#' ### Best Linear Unbiased Prediction (BLUP)
+#' 
+#' As mentioned before, the multiple regression OLS model above doesn't work if $M > N$. If $M > N$ the system of equations is underdetermined (there are infinitely many solutions for $\hat{\boldsymbol{\beta}}$, $\textbf{X}^\top\textbf{X}$ is not positive semidefinite and cannot be inverted). Adding even very small values to the diagonal of $\textbf{X}^\top\textbf{X}$ will change that and lead to a unique solution for $\hat{\boldsymbol{\beta}}$. This is called [Ridge regression](https://en.wikipedia.org/wiki/Tikhonov_regularization). The shrinkage parameter $\lambda$ will make estimated effect sizes smaller and should be proportional to the amount of error in the model. In our case, the error is given by the non-genetic component of the phenotype ($\sigma_e$ or $1 - h^2$ since we assume a phenotypic variance of 1) and $\lambda$ is defined as
+#' $$\lambda = M\frac{1-h^2}{h^2}$$
+#' 
+#' While OLS effects for standardized $\textbf{X}$ and $\hat{\boldsymbol{\beta}}$ are defined as
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{OLS} = (\textbf{X}^\top\textbf{X})^{-1}\textbf{X}^\top \textbf{y}$$
+#' 
+#' BLUP can be written as
+#' 
+#' 
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{BLUP} = (\textbf{X}^\top\textbf{X} + \lambda \textbf{I}_M)^{-1}\textbf{X}^\top \textbf{y}$$
+#' 
+#' The equation above is equivalent to the following equation which is a function of the GRM, rather than the LD matrix:
+#' $$\hat{\boldsymbol{\beta}}_{BLUP} = \textbf{X}^\top (\textbf{X}\textbf{X}^\top + \lambda \textbf{I}_N)^{-1}\textbf{y}$$
+#' 
+#' This illustrates why it is equivalent to say that BLUP corrects for the LD between SNPs, and that it corrects for the genetic relatedness among individuals.
+#' 
+#' The last equation can be rearranged to define BLUP as a function of the phenotypic variance-covariance matrix, $\textbf{V}$:
+#' $$\hat{\boldsymbol{\beta}}_{BLUP} = \frac{h^2}{M} \textbf{X}^\top \textbf{V}^{-1}\textbf{y}$$
+#' 
+#' where $\textbf{V} = \sigma_g \textbf{A} + \sigma_e \textbf{I}_N = \frac{h^2}{M} (\textbf{X}\textbf{X}^\top + \lambda \textbf{I}_N)$.
+#' 
+#' 
+#' Here BLUP is defined for standardized genotypes and SNP effects, because the phenotypic covariance matrix, $\textbf{V}$, is defined based on standardized genotypes, but conversion between $\boldsymbol{\beta}$ and $\boldsymbol{\beta}^*$ is always simple:
+#' 
+#' $$ \hat{\beta}^*_{j,BLUP} \approx \frac{\hat{\beta}_{j,BLUP}}{\sqrt{2p_j(1-p_j)}}$$
+#' 
+#' 
+## ----blup, fig.width=8, fig.cap='**BLUP effect estimates**'--------------
+lambda = m*(1-h2)/h2
+
+beta_blup = solve(t(x) %*% x + diag(m)*lambda ) %*% t(x) %*% y
+beta_o_blup = beta_blup / sqrt(varx)
+
+beta_blupld = solve(t(xld) %*% xld + diag(m)*lambda ) %*% t(xld) %*% yld
+beta_o_blupld = beta_blupld / sqrt(varxld)
+
+p1 = qplot(beta_o, beta_o_blup, col=maf) + geom_abline() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_o, beta_o_blup), 3))) +
+  xlab(expression(paste(beta^"*"))) +
+  ylab(expression(hat(paste(beta^"*"))[BLUP]))
+p2 = qplot(beta_o_gwasld, beta_o_blupld, col=ldscoresld) + geom_abline() +
+  scale_colour_continuous(low='black', high='green') +
+  xlab(expression(hat(paste(beta^"*"))[GWAS]~(LD))) +
+  ylab(expression(hat(paste(beta^"*"))[BLUP]~(LD)))
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' **Left: Data without LD. BLUP estimates usually provide better estimates of the true effect size than GWAS estimates, so the correlation between $\boldsymbol{\beta}$ and $\hat{\boldsymbol{\beta}}_{BLUP}$ should be a bit larger than between $\boldsymbol{\beta}$ and $\hat{\boldsymbol{\beta}}_{GWAS}$.**
+#' **Right: Data with LD. Compared to GWAS estimates, BLUP estimates are shrunk, and the shrinkage is proportional to the LD score.**
+#' 
+#' The shrinkage factor $\lambda$ can vary between 0 and $\infty$, as $h^2$ varies between 0 and 1. Consider what happens when $h^2$ becomes large: $\lambda$ will go to 0 and $\hat{\boldsymbol{\beta}}_{BLUP}$ will become equivalent to $\hat{\boldsymbol{\beta}}_{OLS}$. The same happens when $M$ decreases (since $\lambda = M \frac{1-h^2}{h^2}$) and also as $N$ increases, since $\lambda$ will be small relative to the values in the $\textbf{X}^\top\textbf{X}$ matrix to which it is added.
+#' 
+#' What happens in the opposite case, as $h^2$ and $N$ get smaller and $M$ becomes larger? The matrix $\textbf{X}^\top\textbf{X} + \lambda \textbf{I}$ will become very heavy along its diagonal, so similar in structure to an identity matrix, but with large values. Consequently, $\hat{\boldsymbol{\beta}}_{BLUP}$ will be shrunk very heavily towards 0, but become very similar to $\hat{\boldsymbol{\beta}}_{GWAS}$.
+#' 
+#' The importance of the shrinkage factor is not so much that it makes the effects smaller (although this can be useful as well, see winner's curse section). If we just wanted smaller effects, we could just divide GWAS estimates by some factor, but this wouldn't affect the correlation with the true effects.
+#' 
+#' The reason why the shrinkage factor is important is because it prevents the estimation procedure from placing too much weight on the correlation structure among SNPs and instead to focus more on the marginal effect of each SNP. This is especially important when $M$ is large relative to $N$, because this makes it more difficult to estimate purely conditional effects accurately, while the estimability of each marginal effect only depends on $N$, not $M$.
+#' 
+#' In the BLUP definition shown here, the amount of shrinkage for each SNP is independent of its allele frequency, because the diagonal elements of $\textbf{X}^\top\textbf{X}$ are all $n - 1$ and the shrinkage factor $\lambda$ is constant as well. However, another common definition on BLUP is
+#' 
+#' $$\hat{\boldsymbol{\beta}^*}_{BLUP} = (\textbf{X}^{*\top}\textbf{X}^* + \lambda \textbf{I}_M)^{-1}\textbf{X}^{*\top} \textbf{y}$$
+#' BLUP SNP effects in this way cannot be simply transformed to the $\hat{\boldsymbol{\beta}}_{BLUP}$ defined earlier by multiplying by $\sqrt{2p(1-p)}$, because the shrinkage factor affects SNPs differently here: Since the diagonal elements of $\textbf{X}^{*\top}\textbf{X}^*$ are not constant, but depend on the allele frequency, rare SNPs with small variance (small elements on the diagonal) will be shrunk more, proportionally, than common SNPs with large variance (large elements on the diagonal).
+#' 
+#' 
+#' Notice that the BLUP models shown here assume that we know what $\sigma^2_g$ and $\sigma^2_e$ are (or just $h^2$ with $var(\textbf{y}) = 1$). In practice, these parameters also have to be estimated from the data at the same time (see variance component estimation section).
+#' 
+#' A practical tip for calculating BLUP solutions in R: Matrix multiplications are not commutative, but they are associative. That means the order can't change, but we can group them however we like, without changing the result. We can use this to greatly speed up the calculation of chained matrix multiplications, by forcing R to first evaluate the matrix - vector multiplications: 
+#' 
+## ----blup2---------------------------------------------------------------
+invmat = solve(t(x) %*% x + diag(m)*lambda )
+
+system.time( invmat %*% t(x) %*% y )
+system.time( invmat %*% (t(x) %*% y) )
+
+#' 
+## ----modified_scatter3d, echo=FALSE--------------------------------------
+
+# this is modified from the function lm.ridge in the package 'MASS'
+lm.ridge = function (formula, data, subset, na.action, lambda = 0, model = FALSE, 
+    x = FALSE, y = FALSE, contrasts = NULL, ...) 
+{
+    m <- match.call(expand.dots = FALSE)
+    m$model <- m$x <- m$y <- m$contrasts <- m$... <- m$lambda <- NULL
+    m[[1L]] <- quote(stats::model.frame)
+    m <- eval.parent(m)
+    Terms <- attr(m, "terms")
+    Y <- model.response(m)
+    X <- model.matrix(Terms, m, contrasts)
+    n <- nrow(X)
+    p <- ncol(X)
+    offset <- model.offset(m)
+    if (!is.null(offset)) 
+        Y <- Y - offset
+    if (Inter <- attr(Terms, "intercept")) {
+        Xm <- colMeans(X[, -Inter, drop=F])
+        Ym <- mean(Y)
+        p <- p - 1
+        X <- X[, -Inter] - rep(Xm, rep(n, p))
+        Y <- Y - Ym
+    }
+    else Ym <- Xm <- NA
+    Xscale <- drop(rep(1/n, n) %*% X^2)^0.5
+    X <- X/rep(Xscale, rep(n, p))
+    Xs <- svd(X)
+    rhs <- t(Xs$u) %*% Y
+    d <- Xs$d
+    lscoef <- Xs$v %*% (rhs/d)
+    lsfit <- X %*% lscoef
+    resid <- Y - lsfit
+    s2 <- sum(resid^2)/(n - p - Inter)
+    HKB <- (p - 2) * s2/sum(lscoef^2)
+    LW <- (p - 2) * s2 * n/sum(lsfit^2)
+    k <- length(lambda)
+    dx <- length(d)
+    div <- d^2 + rep(lambda, rep(dx, k))
+    a <- drop(d * rhs)/div
+    dim(a) <- c(dx, k)
+    coef <- Xs$v %*% a
+    dimnames(coef) <- list(names(Xscale), format(lambda))
+    GCV <- colSums((Y - X %*% coef)^2)/(n - colSums(matrix(d^2/div, 
+        dx)))^2
+    res <- list(coef = drop(coef), scales = Xscale, Inter = Inter, 
+        lambda = lambda, ym = Ym, xm = Xm, GCV = GCV, kHKB = HKB, 
+        kLW = LW)
+    class(res) <- "ridgelm"
+    res
+}
+
+# this is modified from the function scatter3d in the package 'car'
+scatter3d <- function(x, ...){
+    if (!requireNamespace("rgl")) stop("rgl package missing")
+    UseMethod("scatter3d")
+}
+
+scatter3d.formula <- function(formula, data, subset, radius, xlab, ylab, zlab, labels, ...){
+    na.save <- options(na.action=na.omit)
+    on.exit(options(na.save))
+    m <- match.call(expand.dots=FALSE)
+    if (is.matrix(eval(m$data, sys.frame(sys.parent())))) 
+        m$data <- as.data.frame(data)
+    m$na.action <- na.pass
+    m$labels <- m$xlab <- m$ylab <- m$zlab <- m$... <- NULL
+    m[[1]] <- as.name("model.frame")
+    formula <- as.character(c(formula))
+    formula <- as.formula(sub("\\|", "+", formula))
+    m$formula <- formula
+    X <- eval(m, parent.frame())
+    if ("(radius)" %in% names(X)){
+        radius <- X[, "(radius)"]
+        X <- X[, names(X) != "(radius)"]
+    }
+    else radius <- 1
+    names <- names(X)
+    if (missing(xlab)) xlab <- names[2]
+    if (missing(ylab)) ylab <- names[1]
+    if (missing(zlab)) zlab <- names[3]
+    if (missing(labels)) labels <- rownames(X)
+    if (ncol(X) == 3) 
+        scatter3d(X[,2], X[,1], X[,3], xlab=xlab, ylab=ylab, zlab=zlab, labels=labels, radius=radius, ...)
+    else if (ncol(X) == 4) 
+        scatter3d(X[,2], X[,1], X[,3], groups=X[,4], xlab=xlab, ylab=ylab, zlab=zlab, labels=labels, radius=radius, ...)
+    else stop("incorrect scatter3d formula")
+}
+
+scatter3d.default <- function(x, y, z,
+    xlab=deparse(substitute(x)), ylab=deparse(substitute(y)),
+    zlab=deparse(substitute(z)), axis.scales=TRUE, axis.ticks=FALSE,
+    revolutions=0, bg.col=c("white", "black"),
+    axis.col=if (bg.col == "white") c("darkmagenta", "black", "darkcyan")
+    else c("darkmagenta", "white", "darkcyan"),
+    surface.col=c("blue", "green", "orange", "magenta", "cyan", "red", "yellow", "gray"),
+    surface.alpha=0.5,
+    neg.res.col="red", pos.res.col="green",
+    square.col=if (bg.col == "white") "black" else "gray", point.col="yellow",
+    text.col=axis.col, grid.col=if (bg.col == "white") "blue" else "gray",
+    fogtype=c("exp2", "linear", "exp", "none"),
+    residuals=(length(fit) == 1), surface=TRUE, fill=TRUE, grid=TRUE, grid.lines=26,
+    df.smooth=NULL, df.additive=NULL,
+    sphere.size=1, radius=1, threshold=0.01, speed=1, fov=60, 
+    fit="linear", groups=NULL, parallel=TRUE, ellipsoid=FALSE, level=0.5, ellipsoid.alpha=0.1,
+    id.method=c("mahal", "xz", "y", "xyz", "identify", "none"), 
+    id.n=if (id.method == "identify") Inf else 0,
+    labels=as.character(seq(along=x)), offset = ((100/length(x))^(1/3)) * 0.02,
+    model.summary=FALSE, lambda=10, ...){
+    if (!requireNamespace("rgl")) stop("rgl package missing")
+    if (!requireNamespace("mgcv")) stop("mgcv package missing")
+    id.method <- match.arg(id.method)
+    if (residuals == "squares"){
+        residuals <- TRUE
+        squares <- TRUE
+    }
+    else squares <- FALSE
+    summaries <- list()
+    if ((!is.null(groups)) && (nlevels(groups) > length(surface.col)))
+        stop(sprintf("Number of groups (%d) exceeds number of colors (%d)",
+            nlevels(groups), length(surface.col)))
+    if ((!is.null(groups)) && (!is.factor(groups))) stop("groups variable must be a factor")
+    counts <- table(groups)
+    if (any(counts == 0)){
+        levels <- levels(groups)
+        warning("the following groups are empty: ", paste(levels[counts == 0], collapse=", "))
+        groups <- factor(groups, levels=levels[counts != 0])
+    }
+    bg.col <- match.arg(bg.col)
+    fogtype <- match.arg(fogtype)
+    if ((length(fit) > 1) && residuals && surface)
+        stop("cannot plot both multiple surfaces and residuals")
+    xlab  # cause these arguments to be evaluated
+    ylab
+    zlab
+    rgl::next3d()
+    rgl::rgl.viewpoint(fov=fov)
+    rgl::rgl.bg(color=bg.col, fogtype=fogtype)
+    if (id.method == "identify"){
+        xg <- x
+        yg <- y
+        zg <- z
+        ggroups <- groups
+        glabels <- labels
+    }
+    valid <- if (is.null(groups)) complete.cases(x, y, z)
+    else complete.cases(x, y, z, groups)
+    x <- x[valid]
+    y <- y[valid]
+    z <- z[valid]
+    labels <- labels[valid]
+    minx <- min(x)
+    maxx <- max(x)
+    miny <- min(y)
+    maxy <- max(y)
+    minz <- min(z)
+    maxz <- max(z)
+    if (axis.scales){
+        lab.min.x <- nice(minx)
+        lab.max.x <- nice(maxx)
+        lab.min.y <- nice(miny)
+        lab.max.y <- nice(maxy)
+        lab.min.z <- nice(minz)
+        lab.max.z <- nice(maxz)
+        minx <- min(lab.min.x, minx)
+        maxx <- max(lab.max.x, maxx)
+        miny <- min(lab.min.y, miny)
+        maxy <- max(lab.max.y, maxy)
+        minz <- min(lab.min.z, minz)
+        maxz <- max(lab.max.z, maxz)
+        min.x <- (lab.min.x - minx)/(maxx - minx)
+        max.x <- (lab.max.x - minx)/(maxx - minx)
+        min.y <- (lab.min.y - miny)/(maxy - miny)
+        max.y <- (lab.max.y - miny)/(maxy - miny)
+        min.z <- (lab.min.z - minz)/(maxz - minz)
+        max.z <- (lab.max.z - minz)/(maxz - minz)
+        if (axis.ticks){
+            if (axis.scales) {
+                x.labels <-  seq(lab.min.x, lab.max.x, 
+                    by=diff(range(lab.min.x, lab.max.x))/4)
+                x.at <- seq(min.x, max.x, by=nice(diff(range(min.x, max.x))/4))
+                rgl::rgl.texts(x.at, -0.05, 0, x.labels, col = axis.col[1])
+                
+                z.labels <-  seq(lab.min.z, lab.max.z, 
+                    by=diff(range(lab.min.z, lab.max.z))/4)
+                z.at <- seq(min.z, max.z, by=diff(range(min.z, max.z))/4)
+                rgl::rgl.texts(0, -0.1, z.at, z.labels, col = axis.col[3])
+                
+                y.labels <-  seq(lab.min.y, lab.max.y, 
+                    by=diff(range(lab.min.y, lab.max.y))/4)
+                y.at <- seq(min.y, max.y, by=diff(range(min.y, max.y))/4)
+                rgl::rgl.texts(-0.05, y.at, -0.05, y.labels, col = axis.col[2])
+            }
+        }
+        else {
+            rgl::rgl.texts(min.x, -0.05, 0, lab.min.x, col=axis.col[1])
+            rgl::rgl.texts(max.x, -0.05, 0, lab.max.x, col=axis.col[1])
+            rgl::rgl.texts(0, -0.1, min.z, lab.min.z, col=axis.col[3])
+            rgl::rgl.texts(0, -0.1, max.z, lab.max.z, col=axis.col[3])
+            rgl::rgl.texts(-0.05, min.y, -0.05, lab.min.y, col=axis.col[2])
+            rgl::rgl.texts(-0.05, max.y, -0.05, lab.max.y, col=axis.col[2])
+        }
+    }
+    if (!is.null(groups)) groups <- groups[valid]
+    x <- (x - minx)/(maxx - minx)
+    y <- (y - miny)/(maxy - miny)
+    z <- (z - minz)/(maxz - minz)
+    size <- sphere.size*((100/length(x))^(1/3))*0.015
+    radius <- radius/median(radius)
+    if (is.null(groups)){
+        if (size > threshold) rgl::rgl.spheres(x, y, z, color=point.col, radius=size*radius)
+        else rgl::rgl.points(x, y, z, color=point.col)
+    }
+    else {
+        if (size > threshold) rgl::rgl.spheres(x, y, z, color=surface.col[as.numeric(groups)], radius=size*radius)
+        else rgl::rgl.points(x, y, z, color=surface.col[as.numeric(groups)])
+    }
+    if (!axis.scales) axis.col[1] <- axis.col[3] <- axis.col[2]
+    rgl::rgl.lines(c(0,1), c(0,0), c(0,0), color=axis.col[1])
+    rgl::rgl.lines(c(0,0), c(0,1), c(0,0), color=axis.col[2])
+    rgl::rgl.lines(c(0,0), c(0,0), c(0,1), color=axis.col[3])
+    rgl::rgl.texts(1, 0, 0, xlab, adj=1, color=axis.col[1])
+    rgl::rgl.texts(0, 1.05, 0, ylab, adj=1, color=axis.col[2])
+    rgl::rgl.texts(0, 0, 1, zlab, adj=1, color=axis.col[3])
+    # if (axis.scales){
+    #     rgl::rgl.texts(min.x, -0.05, 0, lab.min.x, col=axis.col[1])
+    #     rgl::rgl.texts(max.x, -0.05, 0, lab.max.x, col=axis.col[1])
+    #     rgl::rgl.texts(0, -0.1, min.z, lab.min.z, col=axis.col[3])
+    #     rgl::rgl.texts(0, -0.1, max.z, lab.max.z, col=axis.col[3])
+    #     rgl::rgl.texts(-0.05, min.y, -0.05, lab.min.y, col=axis.col[2])
+    #     rgl::rgl.texts(-0.05, max.y, -0.05, lab.max.y, col=axis.col[2])
+    # }
+    if (ellipsoid) {
+        dfn <- 3
+        if (is.null(groups)){
+            dfd <- length(x) - 1
+            ell.radius <- sqrt(dfn * qf(level, dfn, dfd))
+            ellips <- ellipsoid(center=c(mean(x), mean(y), mean(z)),
+                shape=cov(cbind(x,y,z)), radius=ell.radius)
+            if (fill) rgl::shade3d(ellips, col=surface.col[1], alpha=ellipsoid.alpha, lit=FALSE)
+            if (grid) rgl::wire3d(ellips, col=surface.col[1], lit=FALSE)
+        }
+        else{
+            levs <- levels(groups)
+            for (j in 1:length(levs)){
+                group <- levs[j]
+                select.obs <- groups == group
+                xx <- x[select.obs]
+                yy <- y[select.obs]
+                zz <- z[select.obs]
+                dfd <- length(xx) - 1
+                ell.radius <- sqrt(dfn * qf(level, dfn, dfd))
+                ellips <- ellipsoid(center=c(mean(xx), mean(yy), mean(zz)),
+                    shape=cov(cbind(xx,yy,zz)), radius=ell.radius)
+                if (fill) rgl::shade3d(ellips, col=surface.col[j], alpha=ellipsoid.alpha, lit=FALSE)
+                if (grid) rgl::wire3d(ellips, col=surface.col[j], lit=FALSE)
+                coords <- ellips$vb[, which.max(ellips$vb[1,])]
+                if (!surface) rgl::rgl.texts(coords[1] + 0.05, coords[2], coords[3], group,
+                    col=surface.col[j])
+            }
+        }
+    }
+    if (surface){
+        vals <- seq(0, 1, length.out=grid.lines)
+        dat <- expand.grid(x=vals, z=vals)
+        for (i in 1:length(fit)){
+            f <- match.arg(fit[i], c("linear", "quadratic", "smooth", "additive", "ridge"))
+            if (is.null(groups)){
+                mod <- switch(f,
+                    linear = lm(y ~ x + z),
+                    ridge = lm.ridge(y ~ x + z, lambda=lambda),
+                    quadratic = lm(y ~ (x + z)^2 + I(x^2) + I(z^2)),
+                    smooth = if (is.null(df.smooth)) mgcv::gam(y ~ s(x, z))
+                    else mgcv::gam(y ~ s(x, z, fx=TRUE, k=df.smooth)),
+                    additive = if (is.null(df.additive)) mgcv::gam(y ~ s(x) + s(z))
+                    else mgcv::gam(y ~ s(x, fx=TRUE, k=df.additive[1]+1) +
+                            s(z, fx=TRUE, k=(rev(df.additive+1)[1]+1)))
+                )
+                if (model.summary) summaries[[f]] <- summary(mod)
+                if(f == 'ridge') {
+                            yhat <- matrix(as.matrix(cbind(const=1,cbind(dat))) %*% coef(mod), grid.lines, grid.lines)
+                        } else {
+                            yhat <- matrix(predict(mod, newdata=cbind(dat)), grid.lines, grid.lines)
+                        }
+                if (fill) rgl::rgl.surface(vals, vals, yhat, color=surface.col[i], alpha=surface.alpha, lit=FALSE)
+                if(grid) rgl::rgl.surface(vals, vals, yhat, color=if (fill) grid.col
+                    else surface.col[i], alpha=1, lit=FALSE, front="lines", back="lines")
+                if (residuals){
+                    n <- length(y)
+                    if(f == 'ridge') {
+                        fitted <- c(as.matrix(cbind(const=1,x,z)) %*% coef(mod))
+                    } else {
+                        fitted <- fitted(mod)
+                    }
+                    colors <- ifelse(residuals(mod) > 0, pos.res.col, neg.res.col)
+                    colors <- pos.res.col
+                    rgl::rgl.lines(as.vector(rbind(x,x)), as.vector(rbind(y,fitted)), as.vector(rbind(z,z)),
+                        color=as.vector(rbind(colors,colors)))
+                    # surface dots
+                    rgl::rgl.lines(as.vector(rbind(x,x)), as.vector(rbind(fitted+1e-2,fitted-1e-2)), as.vector(rbind(z,z)), col='black')
+                    # projection lines
+                    #rgl::rgl.lines(as.vector(rbind(0,x)), as.vector(rbind(y,y)), as.vector(rbind(z,z)), col='lightgray')
+                    #rgl::rgl.lines(as.vector(rbind(x,x)), as.vector(rbind(y,y)), as.vector(rbind(0,z)), col='lightgray')
+                    # marginal effect lines
+                    if(f == 'ridge') {
+                            modmar = lm.ridge(y ~ x, lambda=lambda)
+                            yhatmar <- c(as.matrix(cbind(const=1, 0:1)) %*% coef(modmar))
+                            rgl::rgl.lines(0:1, yhatmar, 0:0, col='purple')
+                            modmar = lm.ridge(y ~ z, lambda=lambda)
+                            yhatmar <- c(as.matrix(cbind(const=1, 0:1)) %*% coef(modmar))
+                            rgl::rgl.lines(0:0, yhatmar, 0:1, col='purple')
+                    } else {
+                      rgl::rgl.lines(0:1, predict(lm(y ~ x), newdata = data.frame(x=0:1)), 0:0, col='purple')
+                      rgl::rgl.lines(0:0, predict(lm(y ~ z), newdata = data.frame(z=0:1)), 0:1, col='purple')
+                    }
+                    if (squares){
+                        res <- y - fitted
+                        xx <- as.vector(rbind(x, x, x + res, x + res))
+                        yy <- as.vector(rbind(y, fitted, fitted, y))
+                        zz <- as.vector(rbind(z, z, z, z))
+                        rgl::rgl.quads(xx, yy, zz, color=square.col, alpha=surface.alpha, lit=FALSE)
+                        rgl::rgl.lines(xx, yy, zz, color=square.col)
+                    }
+                }
+            }
+            else{
+                if (parallel){
+                    mod <- switch(f,
+                        linear = lm(y ~ x + z + groups),
+                        ridge = lm.ridge(y ~ x + z, lambda=lambda),
+                        quadratic = lm(y ~ (x + z)^2 + I(x^2) + I(z^2) + groups),
+                        smooth = if (is.null(df.smooth)) mgcv::gam(y ~ s(x, z) + groups)
+                        else mgcv::gam(y ~ s(x, z, fx=TRUE, k=df.smooth) + groups),
+                        additive = if (is.null(df.additive)) mgcv::gam(y ~ s(x) + s(z) + groups)
+                        else mgcv::gam(y ~ s(x, fx=TRUE, k=df.additive[1]+1) +
+                                s(z, fx=TRUE, k=(rev(df.additive+1)[1]+1)) + groups)
+                    )
+                    if (model.summary) summaries[[f]] <- summary(mod)
+                    levs <- levels(groups)
+                    for (j in 1:length(levs)){
+                        group <- levs[j]
+                        select.obs <- groups == group
+                        if(f == 'ridge') {
+                            yhat <- matrix(as.matrix(cbind(const=1,cbind(dat, groups=group))) %*% coef(mod), grid.lines, grid.lines)
+                        } else {
+                            yhat <- matrix(predict(mod, newdata=cbind(dat, groups=group)), grid.lines, grid.lines)
+                        }
+                        if (fill) rgl::rgl.surface(vals, vals, yhat, color=surface.col[j], alpha=surface.alpha, lit=FALSE)
+                        if (grid) rgl::rgl.surface(vals, vals, yhat, color=if (fill) grid.col
+                            else surface.col[j], alpha=surface.alpha, lit=FALSE, front="lines", back="lines")
+                        #rgl::rgl.texts(1, predict(mod, newdata=data.frame(x=1, z=1, groups=group)), 1,
+                        #    paste(group, " "), adj=1, color=surface.col[j])
+                        if (residuals){
+                            yy <- y[select.obs]
+                            xx <- x[select.obs]
+                            zz <- z[select.obs]
+                            fitted <- fitted(mod)[select.obs]
+                            res <- yy - fitted
+                            rgl::rgl.lines(as.vector(rbind(xx,xx)), as.vector(rbind(yy,fitted)), as.vector(rbind(zz,zz)),
+                                col=surface.col[j])
+                            if (squares) {
+                                xxx <- as.vector(rbind(xx, xx, xx + res, xx + res))
+                                yyy <- as.vector(rbind(yy, fitted, fitted, yy))
+                                zzz <- as.vector(rbind(zz, zz, zz, zz))
+                                rgl::rgl.quads(xxx, yyy, zzz, color=surface.col[j], alpha=surface.alpha, lit=FALSE)
+                                rgl::rgl.lines(xxx, yyy, zzz, color=surface.col[j])
+                            }
+                        }
+                    }
+                }
+                else {
+                    levs <- levels(groups)
+                    for (j in 1:length(levs)){
+                        group <- levs[j]
+                        select.obs <- groups == group
+                        mod <- switch(f,
+                            linear = lm(y ~ x + z, subset=select.obs),
+                            ridge = lm.ridge(y ~ x + z, lambda=lambda),
+                            quadratic = lm(y ~ (x + z)^2 + I(x^2) + I(z^2), subset=select.obs),
+                            smooth = if (is.null(df.smooth)) mgcv::gam(y ~ s(x, z), subset=select.obs)
+                            else mgcv::gam(y ~ s(x, z, fx=TRUE, k=df.smooth), subset=select.obs),
+                            additive = if (is.null(df.additive)) mgcv::gam(y ~ s(x) + s(z), subset=select.obs)
+                            else mgcv::gam(y ~ s(x, fx=TRUE, k=df.additive[1]+1) +
+                                    s(z, fx=TRUE, k=(rev(df.additive+1)[1]+1)), subset=select.obs)
+                        )
+                        if (model.summary) summaries[[paste(f, ".", group, sep="")]] <- summary(mod)
+                        if(f == 'ridge') {
+                            yhat <- matrix(as.matrix(cbind(const=1,cbind(dat, groups=group))) %*% coef(mod), grid.lines, grid.lines)
+                        } else {
+                            yhat <- matrix(predict(mod, newdata=cbind(dat, groups=group)), grid.lines, grid.lines)
+                        }
+                        if (fill) rgl::rgl.surface(vals, vals, yhat, color=surface.col[j], alpha=surface.alpha, lit=FALSE)
+                        if (grid) rgl::rgl.surface(vals, vals, yhat, color=if (fill) grid.col
+                            else surface.col[j], alpha=surface.alpha, lit=FALSE, front="lines", back="lines")
+
+                        if (residuals){
+                            yy <- y[select.obs]
+                            xx <- x[select.obs]
+                            zz <- z[select.obs]
+                            fitted <- fitted(mod)
+                            res <- yy - fitted
+                            
+                            rgl::rgl.lines(as.vector(rbind(xx,xx)), as.vector(rbind(yy,fitted)), as.vector(rbind(zz,zz)),
+                                col=surface.col[j])
+                            if (squares) {
+                                xxx <- as.vector(rbind(xx, xx, xx + res, xx + res))
+                                yyy <- as.vector(rbind(yy, fitted, fitted, yy))
+                                zzz <- as.vector(rbind(zz, zz, zz, zz))
+                                rgl::rgl.quads(xxx, yyy, zzz, color=surface.col[j], alpha=surface.alpha, lit=FALSE)
+                                rgl::rgl.lines(xxx, yyy, zzz, color=surface.col[j])
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else levs <- levels(groups)
+    if (id.method == "identify"){
+        Identify3d(xg, yg, zg, axis.scales=axis.scales, groups=ggroups, labels=glabels, 
+            col=surface.col, offset=offset)
+    }
+    else if (id.method != "none"){
+        if (is.null(groups)) 
+            showLabels3d(x, y, z, labels, id.method=id.method, id.n=id.n, col=surface.col[1])
+        else {
+            for (j in 1:length(levs)){
+                group <- levs[j]
+                select.obs <- groups == group
+                showLabels3d(x[select.obs], y[select.obs], z[select.obs], labels[select.obs], 
+                    id.method=id.method, id.n=id.n, col=surface.col[j])
+            }
+        }
+    }
+    if (revolutions > 0) {
+        for (i in 1:revolutions){
+            for (angle in seq(1, 360, length.out=360/speed)) rgl::rgl.viewpoint(-angle, fov=fov)
+        }
+    }
+    if (model.summary) return(summaries) else return(invisible(NULL))
+}
+
+showLabels3d <- function(x, y, z, labels,
+    id.method = "identify", id.n=length(x), col=c("blue"), 
+    res=y - mean(y), range.x=range(x), range.z=range(z), 
+    offset = ((100/length(x))^(1/3)) * 0.02) {
+    if (!requireNamespace("rgl")) stop("rgl package is missing")
+    if (id.method == "none") return(NULL)
+    if(id.n > 0L) {
+        if (missing(labels))
+            labels <- as.character(seq(along=x))
+        getPoints <- function(w) {
+            names(w) <- labels
+            iid <- seq(length=id.n)
+            ws <- w[order(-w)[iid]]
+            match(names(ws), labels)
+        }
+        ind <-  switch(id.method,
+            xz = getPoints(rowSums(qr.Q(qr(cbind(1, x, z))) ^ 2)),
+            y = getPoints(abs(res)),
+            xyz = union(getPoints(abs(x - mean(x))), union(abs(z - mean(z)),
+                getPoints(abs(res)))),
+            mahal= getPoints(rowSums(qr.Q(qr(cbind(1, x, y, z))) ^ 2)))
+        rgl::rgl.texts(x[ind], y[ind] + offset, z[ind], labels[ind],
+            color = col)
+        return(labels[ind])
+    } 
+}
+
+
+#' 
+#' BLUP only has an advantage over OLS in two or more dimensions:
+#' 
+## ----blup3, fig.width=8, rgl=TRUE, webgl=TRUE----------------------------
+if(is.null(out_type)) out_type = ''
+if(out_type != 'html') knit_hooks$set(rgl = hook_rgl, webgl = hook_webgl)
+sam = 5
+x1 = rbinom(sam, 2, .45)
+x2 = rbinom(sam, 2, .43)
+z = rnorm(sam) - x2
+dat = data.frame(x1, x2 , z)
+mfrow3d(nr = 1, nc = 2, sharedMouse = TRUE)
+scatter3d(z ~ x1 + x2, data=dat, xlab='x1', ylab='y', zlab='x2', axis.scales=F,
+          fill=out_type=='html', grid.lines=3, fit='linear')
+scatter3d(z ~ x1 + x2, data=dat, xlab='x1', ylab='y', zlab='x2', axis.scales=F,
+          fill=out_type=='html', grid.lines=3, fit='ridge', lambda=5)
+fn = spin3d(axis = c(0, 1, 0))
+rglwidget() %>%
+  playwidget(controls=par3dinterpControl(fn, 0, 100, steps = 100,
+            subscene=subsceneList()[[1]]), step=0, components=c('Play')) %>%
+  playwidget(controls=par3dinterpControl(fn, 0, 100, steps = 100,
+            subscene=subsceneList()[[2]]), step=0, components=c('Play'))
+
+#' 
+#' **Left: OLS; right: BLUP**
+#' 
+#' **Each dot represents an individual with two SNPs (x1 and x2) and a phenotype (y). The surface on the left is the OLS fit to the data, which minimizes the sum of the squared residuals. The slope along the dimensions x1 and x2 represents $\hat{\beta}_1$ and $\hat{\beta}_2$. Here, N is large relative to M (2). If that were not the case, the OLS model could easily overfit the data. To prevent that, BLUP softens the objective of minimizing the squared residuals (green segments), by modeling the y-values not as fixed values, but as measurements with a normally distributed error. The BLUP objective function is then to minimize the sum of squared residuals, while at the same time limiting the estimated beta values (preventing the surface from becoming too steep). The purple lines are the marginal effects for the two SNPs. On the left, they are just GWAS effects and on the right, they are shrunk marginal effects. BLUP effects should be closer to the marginal effects than OLS effects are to marginal effects.**
+#' 
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' ### Mixed linear model association (MLMA)
+#' 
+#' In a standard GWAS setting, the first 10 or 20 principal components are often fitted as covariates to correct for population stratification. A different approach is to run a mixed linear model association analysis, which is sometimes said to be similar to fitting all principal components, as it fits the whole GRM, which contains the same information as all principal components.
+#' 
+#' While GWAS estimates are based on [ordinary least squares](https://en.wikipedia.org/wiki/Ordinary_least_squares) (OLS), MLMA estimates are based on [generalized least squares](https://en.wikipedia.org/wiki/Generalized_least_squares) (GLS).
+#' 
+#' The GWAS association statistic is based on univariate [OLS](https://en.wikipedia.org/wiki/Ordinary_least_squares) and is
+#' 
+#' $$\hat{\beta}_{j,GWAS} = \frac{\textbf{X}_{j}^\top \textbf{y}}{\textbf{X}_{j}^\top\textbf{X}_{j}}$$
+#' 
+#' and the MLMA association statistic is based on univariate [GLS](https://en.wikipedia.org/wiki/Generalized_least_squares) and is
+#' 
+#' $$\hat{\beta}_{j,MLMA} = \frac{\textbf{X}_{j}^\top \textbf{V}^{-1}\textbf{y}}{\textbf{X}_{j}^\top \textbf{V}^{-1}\textbf{X}_{j}}$$
+#' where $\textbf{V}$ is the phenotypic variance covariance matrix:
+#' 
+#' $$ \textbf{V} = Var[\textbf{y}] = \sigma^2_g \textbf{A} + \sigma^2_e \textbf{I} = \frac{h^2}{M} (\textbf{X}\textbf{X}^\top + \lambda \textbf{I}_N)$$
+#' 
+#' Strictly speaking, the $\textbf{V}$ matrix should be based on a GRM which includes all SNPs except the SNP for which the association statistic is calculated, so that this SNP is not fitted twice in the model. This is impractical because it would require to compute a different GRM for each SNP. What is therefore often done in practice is to have 23 GRMs, where each chromosome is left out in one of them, and each SNP is modelled with the GRM that doesn't include that SNP (GCTA MLMA-LOCO).
+#' 
+#' When we compare the definition of $\hat{\beta}_{j,MLMA}$ here to $\hat{\beta}_{j,BLUP}$, we see that they are closely related. In fact, $\hat{\beta}_{j,MLMA}$ can be expressed like this:
+#' 
+#' $$\hat{\beta}_{j,MLMA} = \frac{M}{h^2} \frac{\hat{\beta}_{j,BLUP}}{\textbf{X}_{j}^\top \textbf{V}^{-1}\textbf{X}_{j}}$$
+#' 
+#' The un-standardized MLMA effects can be obtained like this:
+#' 
+#' $$\hat{\beta^*}_{j,MLMA} = \frac{\textbf{X}_{j}^{*\top} \textbf{V}^{-1}\textbf{y}}{\textbf{X}_{j}^{*\top} \textbf{V}^{-1}\textbf{X}^*_{j}} \approx \frac{\hat{\beta}_{j,MLMA}}{\sqrt{(2p_j(1-p_j))}}$$
+#' 
+#' 
+#' 
+## ----mlma1, fig.width=8, fig.cap='**MLMA estimates compared to other estimates in data without LD**'----
+V = h2*grm + (1-h2)*diag(n)
+Vi = solve(V)
+beta_o_mlma = (t(x_o) %*% Vi %*% y) / diag(t(x_o) %*% Vi %*% x_o)
+beta_mlma = beta_o_mlma * sqrt(varx)
+
+p1 = qplot(beta_o_gwas, beta_o_mlma, col=ldscores) + geom_abline() + theme() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_gwas, beta_mlma), 3))) +
+  scale_colour_continuous(low='black', high='green') +
+  xlab(expression(hat(paste(beta^"*"))[GWAS])) +
+  ylab(expression(hat(paste(beta^"*"))[MLMA]))
+p2 = qplot(beta_o_blup, beta_o_mlma, col=ldscores) + geom_abline() + theme() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_o_blup, beta_o_mlma), 3))) +
+  scale_colour_continuous(low='black', high='green') +
+  xlab(expression(hat(paste(beta^"*"))[BLUP])) +
+  ylab(expression(hat(paste(beta^"*"))[MLMA]))
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' **MLMA estimates are not shrunk and therefore about as large as GWAS estimates.**
+#' 
+#' Let's see what this comparison looks like in data with a wider range in LD scores.
+#' 
+#' 
+## ----mlma3, fig.width=8, fig.cap='**MLMA estimates compared to other estimates in data with LD**'----
+Vld = h2*grmld + (1-h2)*diag(n)
+Vild = solve(Vld)
+beta_o_mlmald = (t(xld) %*% Vild %*% yld) / diag(t(xld) %*% Vild %*% xld) / sqrt(varxld)
+beta_mlmald = beta_o_mlmald * sqrt(varxld)
+
+p1 = qplot(beta_o_gwasld, beta_o_mlmald, col=ldscoresld) + geom_abline() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_o_gwasld, beta_o_mlmald), 3))) +
+  scale_colour_continuous(low='black', high='green') +
+  xlab(expression(hat(paste(beta^"*"))[GWAS]~(LD))) +
+  ylab(expression(hat(paste(beta^"*"))[MLMA]~(LD)))
+p2 = qplot(beta_o_blupld, beta_o_mlmald, col=ldscoresld) +
+  geom_point() + geom_abline() + theme() +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=paste0('corr: ', round(cor(beta_o_blupld, beta_o_mlmald), 3))) +
+  scale_colour_continuous(low='black', high='green') +
+  xlab(expression(hat(paste(beta^"*"))[BLUP]~(LD))) +
+  ylab(expression(hat(paste(beta^"*"))[MLMA]~(LD)))
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' **In data with more variable LD between SNPs, MLMA estimates are more similar to the marginal GWAS estimates than to the conditional BLUP estimates. Conditioned on LD score, BLUP estimates are proportional to MLMA estimates.**
+#' 
+#' 
+#' <!-- In real data with more LD between SNPs, MLMA estimates would be more similar to GWAS estimates than to BLUP estimates. -->
+#' 
+#' <!-- Just like BLUP estimates, MLMA estimates neither represent purely marginal effects (like GWAS) nor purely conditional effects (like multiple regression OLS). How similar the estimates are to marginal or to conditional effects depends on the parameters $N$, $M$ and $h^2$. Larger $N$ and $h^2$, and lower $M$ will reduce the error in the model and make the estimates more accurate and more like conditional effects. -->
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Comparison of the models
+#' 
+#' $$\hat{\beta}_{j,GWAS} = \frac{\color{lightgray}{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j} \color{black}{\textbf{X}_{j}^\top \textbf{y}}} {\color{lightgray}{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j} \color{black}{\textbf{X}_{j}^\top \textbf{X}_{j}}}$$
+#' 
+#' The covariance of SNP and phenotype, scaled by the variance of the SNP.
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' $$\hat{\beta}_{j,OLS} = \frac{(\color{lightgray}{\lambda_M \textbf{I}} \color{lightgray}{+} \color{black}{\textbf{X}^\top \textbf{X})^{-1}_j \textbf{X}_{j}^\top \textbf{y}}} {\color{lightgray}{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j  \textbf{X}_{j}^\top \textbf{X}_{j}}}$$
+#' 
+#' The covariance of SNP and phenotype, scaled by the covariance structure of all SNPs.
+#' 
+#' \ 
+#' 
+#' 
+#' $$\hat{\beta}_{j,BLUP} = \frac{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j \textbf{X}_{j}^\top \textbf{y}} {\color{lightgray}{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j  \textbf{X}_{j}^\top \textbf{X}_{j}}}$$
+#' 
+#' The covariance of SNP and phenotype, scaled by the covariance structure of all SNPs, without overemphasizing the covariances among SNPs.
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' $$\hat{\beta}_{j,MLMA} = \frac{(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j \textbf{X}_{j}^\top \textbf{y}} {(\lambda_M \textbf{I} + \textbf{X}^\top \textbf{X})^{-1}_j  \textbf{X}_{j}^\top \textbf{X}_{j}}$$
+#' 
+#' Like $\hat{\beta}_{j,BLUP}$, but scaled back so that effects are not shrunk if they are in LD with many other SNPs.
+#' 
+#' 
+#' \ 
+#' 
+#' ----
+#' 
+#' ## SNP effects - precision of estimates
+#' 
+#' \ 
+#' 
+#' Almost as important as the estimate itself is the standard error of the estimate. This quantifies the variability of the estimate that is due to the sampling process and thus the precision of the estimate. The standard error of an estimate is the basis for other statistics like p-values and confidence intervals and is defined as
+#' 
+#' $$SE^2_{\hat{\beta}} = var(\hat{\beta} \mid \beta) = var(\hat{\beta} - \beta)$$
+#' We don't usually know $\beta$, but we can still estimate what the standard error of an effect estimate is.
+#' 
+#' 
+#' ### Sampling variance of GWAS estimates
+#' 
+#' The standard error of the GWAS estimate of the effect size of a SNP is:
+#' 
+#' $$SE^2_{\hat{\beta^*}_{j,GWAS}} = var(\hat{\beta^*}_{j,GWAS} \mid \beta^*_j) = \frac{var(\textbf{y}) - var(\textbf{X}^*_j) \hat{\beta^*}^2_{j,GWAS}  }{N \times var(\textbf{X}^*_j)}$$
+#' 
+#' Here the numerator represents the variance in the phenotype that is not explained by this SNP. Since under a polygenic model, each SNP explains almost no variance ($var(\textbf{X}^*_j) \hat{\beta^*}^2_{j,GWAS}$ is close to 0), and $var(\textbf{y})$ is often one, the numerator is often approximated as one:
+#' 
+#' 
+#' $$SE^2_{\hat{\beta^*}_{j,GWAS}} = var(\hat{\beta^*}_{j,GWAS} \mid \beta^*_j) \approx \frac{1}{N \times var(\textbf{X}^*_j)} = \frac{1}{N \times 2p_j(1-p_j)}$$
+#' 
+#' 
+#' It gets even simpler when switching to standardized genotypes and effect sizes: Since $var(\textbf{X}_j) = 1$ for every SNP $j$, the sampling variance of $\hat{\beta}_{j,GWAS}$ is
+#' 
+#' $$SE^2_{\hat{\beta}_{j,GWAS}} = var(\hat{\beta}_{j,GWAS} \mid \beta) \approx \frac{1}{N}$$
+#' 
+#' Let's see how the expected sampling variance compares to the observed sampling variance, stratified by MAF:
+#' 
+## ----beta_SE, fig.cap='**The standard error of $\\hat{\\boldsymbol{\\beta}}_{GWAS}$ is higher for rare SNPs.**'----
+beta_se = sqrt(1/(n*varx))
+observed_beta_sampling_variance = tapply(beta_o_gwas - beta_o, bins, var)
+expected_beta_sampling_variance = tapply(beta_se^2, bins, mean)
+
+dat = data.frame(binNum=1:length(binMeans),
+                 expected_beta_sampling_variance,
+                 observed_beta_sampling_variance)
+ggplot(dat, aes(expected_beta_sampling_variance, observed_beta_sampling_variance)) +
+  geom_text(aes(label=binNum, col=binMeans)) +
+  scale_x_log10() + scale_y_log10() +
+  geom_abline() +
+  xlab(expression(paste(hat(SE)[hat(beta^'*')]^2,
+                        '  (',hat(var),'(',hat(beta^'*'),' | ',beta^'*','))'))) +
+  ylab(expression(paste('var(',hat(beta^'*'),' | ',beta^'*',')')))
+
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Sampling variance of MLMA estimates
+#' 
+#' If $var(\textbf{y} = 1)$ and if each SNP explains only very little variance, the sampling variance of $\hat{\beta^*}_{j,GWAS}$ can be approximated as
+#' 
+#' $$SE^2_{\hat{\beta^*}_{j,GWAS}} \approx \frac{1}{N \times var(\textbf{X}^*_j)} = \frac{1}{\textbf{X}_j^{*\top} \textbf{X}^*_j}$$
+#' 
+#' Similarly, the standard error for MLMA estimates can be approximated as
+#' 
+#' $$SE^2_{\hat{\beta^*}_{j,MLMA}} \approx \frac{1}{\textbf{X}_j^{*\top} \textbf{V}^{-1} \textbf{X}^*_j}$$
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' ### z-scores
+#' 
+#' z-scores are defined as
+#' $$z = \frac{x-\mathbb{E}[x]}{\sigma(x)}$$
+#' 
+#' where $\sigma(x)$ is the standard deviation of $x$. It quantifies how far a statistic is from its expectation in standard deviation units and it should follow a standard normal distribution. We can calculate the z-score of an effect estimate under the null hypothesis ($\mathbb{E}[\hat{\boldsymbol{\beta}}] = 0$)
+#' 
+#' $$z_j = \frac{\hat{\beta^*}_j}{SE_{\hat{\beta^*}_j}}$$
+#' 
+#' Since the $\chi^2_{k}$ distribution with $k$ degrees of freedom is the same as a sum of $k$ independent standard normal distributions, z-scores are closely related to $\chi^2$ values with degree of freedom of 1:
+#' $$z^2 = \chi^2_1$$
+#' Strictly speaking, $\frac{\hat{\beta^*}_j}{SE_{\hat{\beta^*}_j}}$ follows a t-distribution with $N - 1$ degrees of freedom, not a standard normal distribution, but for large $N$ the difference becomes negligible.
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' ### p-value of GWAS estimates
+#' 
+#' The z-score tells us where on the null distribution our effect estimate lies. It can therefore be converted into a (two-sided) p-value, which is the probability of observing an effect at least as extreme as the one estimated, under the null distribution.
+#' 
+#' $$
+#' \begin{aligned}
+#' \text{p-value}_{\hat{\beta^*}_j} &= 2 \times min\{Pr(\hat{\beta^*} \geq \hat{\beta^*}_j \mid \beta^* = 0), Pr(\hat{\beta^*} \leq \hat{\beta^*}_j \mid \beta^* = 0)\} \\
+#'                              &= 2\Phi(-\frac{|\hat{\beta^*}_j|}{SE_{\hat{\beta^*_j}}}) \\
+#'                              &= 2\Phi(-|\hat{z}|)
+#' \end{aligned}
+#' $$
+#' 
+#' where $\Phi(x)$ is the probability distribution function of the standard normal distribution at $x$ (```pnorm```) and $\hat{\beta^*}$ denotes the random variable rather than the concrete estimate of $\hat{\beta^*}_j$.
+#' 
+#' To go from two-sided p-values to z-scores:
+#' 
+#' $$ z = \Phi^{-1}(\frac{\text{p-value}}{2}) $$
+#' 
+#' where $\Phi^{-1}(x)$ is the quantile function of the standard normal distribution at $x$ (```qnorm```).
+#' 
+## ----pval1, echo=TRUE, fig.cap='**z-score and p-value**'-----------------
+lim = 3
+z = 1.5
+ggplot(data.frame(x=c(-lim, lim)), aes(x)) + stat_function(fun=dnorm) +
+  stat_function(fun=dnorm, geom='area', xlim=c(z, lim), fill='purple', alpha = 0.2) +
+  stat_function(fun=dnorm, geom='area', xlim=c(-lim, -z), fill='purple', alpha = 0.2) +
+  geom_vline(xintercept=z, linetype=2) +
+  annotate('text', z+.11, .2,
+           label=as.character(expression(paste("z=",frac(hat(beta),SE[beta])))),
+           parse=T, hjust=0) +
+  ylab(expression(phi(x)))
+
+
+#' 
+#' The vertical line represents a z-score. The total area of the shaded segments represents the p-value.
+#' 
+## ----pval2, echo=FALSE---------------------------------------------------
+qqPlot = function (pval, main='', ...) {
+  pval <- -log10(sort(pval))
+  n <- length(pval)
+  a <- 1:n
+  b <- a/n
+  upper <- qbeta(0.025, a, rev(a))
+  lower <- qbeta(0.975, a, rev(a))
+  x <- -log10(b)
+  char <- rep(1, n)
+  ylm <- NULL
+  ylb <- substitute(paste(-log[10], "(observed P)"))
+
+  plot(x, pval, type = "n", ylim = ylm, ylab = ylb, xlab = substitute(paste(-log[10], 
+                                                                            "(expected P)")), main=main, ...)
+  polygon(-log10(c(b, rev(b))), -log10(c(upper, rev(lower))), 
+          density = NA, col = "gray")
+  points(x, pval, pch = char, ...)
+  abline(0, 1, col = "red")
+}
+
+#' 
+#' 
+## ----p_value, fig.width=12, fig.height=3, fig.cap='**Different ways to visualize p-values**'----
+par(mfrow=c(1,4))
+z = beta_gwas/beta_se
+pval = 2*pnorm(-abs(z))
+
+plot(beta_gwas, -log10(pval), main='Volcano plot')
+hist(pval, 100, col='black')
+qqPlot(pval, main='qq-plot')
+plot(-log10(pval), main='Manhattan plot')
+par(mfrow=c(1,1))
+
+#' 
+#' **Most are based on negative $log_{10}$ transformed p-values, to better highlight the more interesting small p-values. Volcano plots illustrate that SNPs with larger absolute $\hat{\boldsymbol{\beta^*}}$ values tend to have lower p-values. Histograms of p-values are useful, because under the null hypothesis, p-values will follow a uniform distribution between 0 and 1. QQ-plots can also highlight an overall inflation of p-values, but with better resolution at the lower end. Manhattan plots from GWAS p-values usually show peaks of multiple SNPs with low p-values, because of LD.**
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Re-estimating GWAS statistics
+#' 
+#' The equations above can be rearranged to estimate various statistics. To keep things simpler, in this section $SE^2$ refers to $SE^2_{\beta^*_{j,GWAS}}$ and $\beta$ refers to $\hat{\beta^*_j}$. The approximations assume that $2p(1-p) \beta^2$ is close to zero.
+#' 
+#' $$SE^2 = \frac{var(\textbf{y}) - 2p(1-p) \beta^2  }{N \times 2p(1-p)} \approx \frac{var(\textbf{y})}{N \times 2p(1-p)}$$
+#' 
+#' \
+#' 
+#' 
+#' $$N = \frac{var(\textbf{y}) - 2p(1-p) \beta^2  }{SE^2 \times 2p(1-p)} \approx \frac{var(\textbf{y})}{SE^2 \times 2p(1-p)}$$
+#' 
+#' \
+#' 
+#' 
+#' $$ var(\textbf{y}) = 2p(1-p) (N \times SE^2 + \beta^2) \approx 2p(1-p) \times N \times SE^2$$
+#' 
+#' \
+#' 
+#' 
+#' $$\beta^2 = \frac{var(\textbf{y})}{2p(1-p)} - N \times SE^2$$
+#' 
+#' This one doesn't tell us about the sign of $\beta$, however.
+#' 
+#' \
+#' 
+#' $$p(1-p) = \frac{var(\textbf{y})}{2 (N \times SE^2 + \beta^2)}$$
+#' 
+#' 
+#' The last one can be solved for p, and only leaves two options which center around 0.5.
+#' 
+#' When working with GWAS summary statistics, all of these quantities except $var(\textbf{y})$ are usually known. When $var(\textbf{y})$ can be assumed to be one, sample size or standard error can be re-estimated from the other quantities. When $\beta$ refers to standardized $\beta$, $2p(1-p)$ should be set to 1.
+#' 
+#' 
+#' \
+#' 
+#' 
+#' 
+#' ### Confidence intervals and power
+#' 
+#' While p-values are widely used, they often draw criticism for their potential to be misused. An alternative to reporting p-values can be to report confidence intervals, which describe the range in which the estimated value would fall with a certain probability, if the sampling process was repeated. If the sampling distribution is normal, the 95% confidence interval can be estimated as $\hat{\boldsymbol{\beta}} \pm 1.96 \times SE_{\boldsymbol{\beta}}$  (because $1-2\Phi(-1.96) \approx 0.95$). A 95% confidence interval that does not include 0 is equivalent to a p-value smaller than 0.05 for an effect being different from 0.
+#' 
+#' 
+## ----power1, echo=FALSE--------------------------------------------------
+
+plot_power = function(n, reps, b, alpha=NA, show_points=TRUE, show_se=TRUE, annot=TRUE, xlim=NULL, ylim=NULL) {
+
+  if(is.na(alpha)) {
+    alpha = 1
+    show_power = FALSE
+  } else{
+    show_power = TRUE
+  }
+
+  e = 1-b^2
+  z = abs(qnorm(alpha/2))*sqrt(1/n)
+
+  x0 = matrix(rnorm(n * reps), n)
+  y0 = x0 * b + matrix(rnorm(n * reps, 0, sqrt(e)), n)
+  ynull = matrix(rnorm(n * reps), n)
+
+  lmh1 = t(sapply(1:reps, function(i) summary(lm(y0[,i] ~ x0[,i]))$coefficients[2,1:2] ))
+  bh1_est = lmh1[,1]
+  seh1_est = lmh1[,2]
+
+  lmh0 = t(sapply(1:reps, function(i) summary(lm(ynull[,i] ~ x0[,i]))$coefficients[2,1:2] ))
+  bh0_est = lmh0[,1]
+  seh0_est = lmh0[,2]
+
+  f = 1
+  cross0h1 = bh1_est+f*seh1_est > 0 & bh1_est-f*seh1_est < 0
+  cross0h0 = bh0_est+f*seh0_est > 0 & bh0_est-f*seh0_est < 0
+  crossbh1 = bh1_est+f*seh1_est > b & bh1_est-f*seh1_est < b
+  crossbh0 = bh0_est+f*seh0_est > b & bh0_est-f*seh0_est < b
+  yph0 = sapply(1:reps, function(i) runif(1, 0, dnorm(bh0_est[i], 0, sqrt(1/n))))
+  yph1 = sapply(1:reps, function(i) runif(1, 0, dnorm(bh1_est[i], b, sqrt(e/n))))
+
+  dat = rbind(data.frame(hyp='h1', x=bh1_est, se=seh1_est, cross0=cross0h1, crossb=crossbh1, y=yph1),
+              data.frame(hyp='h0', x=bh0_est, se=seh0_est, cross0=cross0h0, crossb=crossbh0, y=yph0))
+
+  xmax = max(xlim[2], max(dat$x)+min(dat$se))
+  xmin = min(xlim[1], min(dat$x)-max(dat$se))
+
+  mypal2 = c(hcl(h=seq(15, 375, length=4), l=65, c=100)[1:3], 'goldenrod1')[c(3,2,1,4)]
+
+  if(show_power) {
+    col = "interaction(factor(x > z, levels=c(T,F)), factor(hyp, levels=c('h1', 'h0')))"
+  } else {
+    col = "factor(ifelse(cross0 & hyp=='h0', 4, ifelse(crossb & hyp=='h1', 1, ifelse(!cross0 & hyp=='h0', 3, 2))))"
+  }
+
+  p = ggplot(dat, aes(x, y)) +
+    geom_segment(x=0, xend=0, y=0, yend=dnorm(0, 0, sqrt(1/n)), linetype=2) +
+    geom_segment(x=b, xend=b, y=0, yend=dnorm(b, b, sqrt(e/n)), linetype=1) +
+    stat_function(fun=dnorm, args=list(b, sqrt(e/n)), col='black', xlim=c(xmin, xmax)) +
+    stat_function(fun=dnorm, args=list(0, sqrt(1/n)), col='black', linetype=2, xlim=c(xmin, xmax)) +
+    xlab('effect size') + ylab('') + theme(legend.position = 'none') +
+    coord_cartesian(xlim=xlim, ylim=ylim)
+
+  if(show_points) {
+      p = p + geom_point(aes_string(shape='hyp', col=col), size=2) +
+        scale_shape_manual(values=c(16,1)) +
+        scale_colour_manual(values=mypal2, drop=!show_power)
+      if(show_se) {
+        p = p + geom_errorbarh(aes_string(xmin='x-se*f', xmax='x+se*f', col=col))
+      }
+  }
+  if(show_power) {
+    p = p + stat_function(fun=dnorm, args=list(0, sqrt(1/n)), geom='area', fill=mypal2[3], alpha=.2, xlim=c(xmin, -z)) +
+        stat_function(fun=dnorm, args=list(0, sqrt(1/n)), geom='area', fill=mypal2[3], alpha=.2, xlim=c(z, xmax)) +
+        stat_function(fun=dnorm, args=list(b, sqrt(e/n)), geom='area', fill=mypal2[1], alpha=.2, xlim=c(z, xmax)) +
+        stat_function(fun=dnorm, args=list(b, sqrt(e/n)), geom='area', fill=mypal2[2], alpha=.2, xlim=c(xmin, z)) +
+        stat_function(fun=dnorm, args=list(0, sqrt(1/n)), geom='area', fill='lightgoldenrodyellow', alpha=.2, xlim=c(-z, z)) +
+        geom_vline(xintercept=z, linetype=3)
+  }
+  if(annot) {
+    sds = .3
+    p = p + annotate('text', sqrt(1/n)*sds, dnorm(sqrt(1/n)*sds, 0, sqrt(1/n)), hjust=-0.1, vjust=0, label=as.character(expression(H[0])), parse=T) +
+      annotate('text', b+sqrt(e/n)*sds, dnorm(b+sqrt(e/n)*sds, b, sqrt(e/n)), hjust=-0.1, vjust=0, label=as.character(expression(H[1])), parse=T) +
+      annotate('text', b, 0, hjust=.5, vjust=1.2, label='true effect')
+    if(show_power) {
+      p = p + annotate('text', z, Inf, hjust=1.1, vjust=1.2, label=as.character(expression(paste(` ` %<-% ' don\'t reject ', H[0]))), parse=T) +
+        annotate('text', z, Inf, hjust=-0.1, vjust=1.2, label=as.character(expression(paste('reject ',H[0] %->% ` `))), parse=T)
+    }
+  }
+  p
+
+}
+
+
+#' 
+#' 
+#' 
+## ----power2, fig.cap='**Draws from the sampling distribution and from the null distribution**'----
+plot_power(n=200, reps=30, b=0.2, xlim=c(-.25,.5), ylim=c(0,6))
+
+#' 
+#' **This plot shows a number of draws from the null distribution and the same number of draws from the sampling distribution of the effect estimate. The horizontal bars are standard errors, and are like a 68% confidence interval (because $1-2\Phi(-1) \approx 0.68$). Each standard error represents an estimate of what the (square root of the) variance of the sampling distribution is.**
+#' 
+#' An important question in hypothesis testing is this: What is the probability that we will be able to reject the null hypothesis ($\hat{\boldsymbol{\beta}} = 0$), if there is a true effect of a certain magnitude? This probability depends at least on the sample size and on how willing we are to mistake a null effect for a true effect (type I error, $\alpha$). Not rejecting the null hypothesis when there is a true effect is called a type II error and is the opposite of power. This means that being strict in controlling the type I error rate (small $\alpha$) will reduce power.
+#' 
+#' 
+#' 
+## ----power3, fig.cap='**Power visualized**'------------------------------
+plot_power(n=200, reps=30, b=0.2, alpha=0.05, show_points=F, xlim=c(-.25,.5), ylim=c(0,6))
+
+#' 
+#' **In this plot $\alpha$ is the red area (as a proportion of the area under the null distribution ($H_0$)), and the power is the blue area (as a proportion of the area under the true effect sampling distribution ($H_1$)). Power is also $1-\boldsymbol{\beta}$, where $\boldsymbol{\beta}$ is the type II error rate (green area).**
+#' 
+#' 
+#' 
+#' 
+## ----power4, fig.cap='**The effect of sample size on power**'------------
+plot_power(n=40, reps=30, b=0.2, alpha=0.05, show_points=F, xlim=c(-.25,.5), ylim=c(0,6))
+
+#' 
+#' **Lowering sample size will widen both distributions, and thereby increases the threshold at which an estimated effect can be considered significant at the same level of $\alpha$, thus lowering power.**
+#' 
+#' 
+#' 
+#' 
+## ----power5, fig.cap='**Power determines the proportion of true positive results**'----
+plot_power(n=40, reps=100, b=0.2, alpha=0.05, show_points=T, show_se=F,
+           xlim=c(-.25,.5), ylim=c(0,6))
+
+#' 
+#' **Evaluating in which of the four quadrants estimated effects fall, allows to estimate the numbers of true and false positives and negatives, and many statistics derived from these values, such as the area under the ROC curve (AUC).**
+#' 
+#' 
+#' Here, the null distribution and the sampling distribution of the true effect both follow normal distributions (t-distributions actually, but we ignore that). When the null distribution is a $\chi^2$ distribution instead, the true effect distribution will follow a [non-central $\chi^2$ distribution](https://en.wikipedia.org/wiki/Noncentral_chi-squared_distribution).
+#' 
+#' 
+#' 
+#' \
+#' 
+#' 
+#' 
+#' ### Prediction error variance (PEV) of BLUP estimates
+#' 
+#' 
+#' The precision of BLUP estimates is usually given as a variance-covariance matrix, rather than as a scalar number and is usually defined for the genetic effects rather than the SNP effects, which is why it is called prediction error variance, but here we define it for the SNP effects:
+#' 
+#' $$
+#' \begin{aligned}
+#' Var[\hat{\boldsymbol{\beta}}_{BLUP} \mid \boldsymbol{\beta}] &= Var[\hat{\boldsymbol{\beta}}_{BLUP} - \boldsymbol{\beta}] \\
+#' \\ 
+#' &= Var[\boldsymbol{\beta}] + Var[\hat{\boldsymbol{\beta}}_{BLUP}] - 2 Cov[\boldsymbol{\beta}, \hat{\boldsymbol{\beta}}_{BLUP}]\\
+#' \\ 
+#' &= Var[\boldsymbol{\beta}] + Var[\hat{\boldsymbol{\beta}}_{BLUP}] - 2 Var[\hat{\boldsymbol{\beta}}_{BLUP}] && \text{see section about unbiasedness for why this is valid}\\
+#' \\ 
+#' &= Var[\boldsymbol{\beta}] - Var[\hat{\boldsymbol{\beta}}_{BLUP}]
+#' \end{aligned}
+#' $$
+#' 
+#' 
+#' 
+#' 
+#' Notice that while $var(\hat{\boldsymbol{\beta}}_{GWAS}) > var(\boldsymbol{\beta})$, $var(\hat{\boldsymbol{\beta}}_{BLUP}) <var(\boldsymbol{\beta})$.
+#' 
+#' From before, we know that $Var[\boldsymbol{\beta}] = \frac{h^2}{M} \textbf{I}_M$
+#' 
+#' Recall that the BLUP solution can be written as:
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{BLUP} = \frac{h^2}{M} \textbf{X}^\top \textbf{V}^{-1}\textbf{y}$$
+#' 
+#' The variance of that is:
+#' 
+#' $$
+#' \begin{aligned}
+#' Var[\hat{\boldsymbol{\beta}}_{BLUP}] &= Var[\frac{h^2}{M} \textbf{X}^\top \textbf{V}^{-1} \textbf{y}] \\
+#' \\
+#'                                  &= (\frac{h^2}{M})^2 \textbf{X}^\top \textbf{V}^{-1} \textbf{X} \\
+#' \end{aligned}
+#' $$
+#' 
+#' Therefore,
+#' 
+#' $$
+#' \begin{aligned}
+#' Var[\boldsymbol{\beta} - \hat{\boldsymbol{\beta}}_{BLUP}] &= Var[\boldsymbol{\beta}] - Var[\hat{\boldsymbol{\beta}}_{BLUP}] \\
+#' \\
+#'                                                   &= \frac{h^2}{M} (\textbf{I}_M - \frac{h^2}{M} \textbf{X}^\top \textbf{V}^{-1} \textbf{X}) \\
+#' \end{aligned}
+#' $$
+#' 
+#' The diagonal elements of this matrix should be similar to $var(\boldsymbol{\beta} - \hat{\boldsymbol{\beta}}_{BLUP})$.
+#' 
+## ----pev1----------------------------------------------------------------
+beta_blup_se2 = var(beta_blup - beta)
+pev = (h2/m) * (diag(m) - (h2/m) * t(x) %*% Vi %*% x)
+
+c(beta_blup_se2, mean(diag(pev)))
+
+
+#' 
+#' However, this is not as useful as the standard error estimates given above, because it is a function of the data, not just of the parameters. The section on the expected accuracy of a BLUP predictor has an expression which serves at the same time as an estimate of the BLUP PEV as a function of the parameters:
+#' 
+#' $$cor^2(\textbf{y}, \hat{\textbf{g}}) = var(\hat{\textbf{g}}) = R^2 = \frac{h^2}{1 + \frac{M_e (1-R^2)}{N h^2}}$$
+#' 
+#' $$
+#' \begin{aligned}
+#' var(\boldsymbol{\beta} - \hat{\boldsymbol{\beta}}_{BLUP}) &= var(\boldsymbol{\beta}) - var(\hat{\boldsymbol{\beta}}_{BLUP}) \\
+#' \\
+#'                                                   &= \frac{h^2}{M} - \frac{R^2}{M} \\
+#'                                                   \\
+#'                                                   &= \frac{h^2 - R^2}{M}
+#' \end{aligned}
+#' $$
+#' 
+#' 
+## ----pev2----------------------------------------------------------------
+R2_BLUP = function(m, n, h2) {
+  k = m/n
+  ( (k + h2) - sqrt( (k+h2)^2 - 4*k*h2^2) ) / (2*k)
+}
+
+c(beta_blup_se2, mean(diag(pev)), (h2 - R2_BLUP(m, n, h2))/m)
+
+#' 
+#' The BLUP PEV is substantially lower than the standard errors of the GWAS effect estimate. This is only partially due to the higher accuracy of BLUP estimates and mostly reflects the downward bias of BLUP estimates.
+#' 
+#' \ 
+#' 
+#' ----
+#' 
+#' ## SNP effects - further topics
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' ### Winner's curse and unbiasedness
+#' 
+#' When the SNP with the largest effect is being selected from a GWAS, its estimated effect size is likely going to be larger than its true effect size. This phenomenon is called winner's curse. If we estimated the effect of the same SNP again in and independent cohort, we would likely get a smaller estimate in the new cohort. This closely related effect is called regression to the mean and is just a consequence of how we selected the SNP and the imperfect correlation between the true and the estimated effect size.
+#' 
+#' If we estimated the effect for this same SNP many times in independent cohorts, the effect estimates will center around the SNP's true effect size. GWAS estimates are therefore unbiased in the sense that conditioned on the true effect, the estimated effect will in expectation be the same as the true effect: $$\mathbb{E}[\hat{\beta} \mid \beta] = \beta$$
+#' 
+#' However, when we select the SNP with the largest estimated effect size, we don't condition on the true effect, we condition on the estimated effect. So we know the estimated effect, and ideally we would like an estimate that tells us what the true effect size is, in expectation. It's therefore often handy to have another definition of unbiasedness, which says that the estimated effect is equal to the expectation of the true effect, conditioned on the estimated effect: $$\mathbb{E}[\beta \mid \hat{\beta}] = \hat{\beta}$$
+#' 
+#' GWAS estimates (OLS, which is a BLUE, best linear unbiased estimators) are unbiased in the first sense, but biased in the second (they suffer from winner's curse but are not shrunk), whereas BLUP (best linear unbiased prediction) estimates are biased in the first sense but unbiased in the second (they don't suffer from winner's curse but are shrunk).
+#' 
+#' 
+#' 
+## ----winner1, echo=FALSE, fig.width=12, fig.height=6, fig.cap='**Two definitions of unbiasedness visualized**'----
+ptgr = qplot(1:m, (beta_o_gwas - beta_o)[order(beta_o)]) + geom_abline(slope=0) + xlab(expression(paste(beta, ' rank'))) + ylab(expression(paste(hat(beta)[GWAS]-beta))) +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2, label=as.character(expression(paste("E[",hat(beta), "|", beta,"] = ", beta))), parse=T) + geom_smooth(method='lm', se=TRUE)
+ptbr = qplot(1:m, (beta_o_blup - beta_o)[order(beta_o)]) + geom_abline(slope=0) + xlab(expression(paste(beta, ' rank'))) + ylab(expression(paste(hat(beta)[BLUP]-beta))) + annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2, label=as.character(expression(paste("E[",hat(beta), "|", beta,"]",` `!=beta))), parse=T) + geom_smooth(method='lm', se=TRUE)
+pegr = qplot(1:m, (beta_o - beta_o_gwas)[order(beta_o_gwas)]) + geom_abline(slope=0) + xlab(expression(paste(hat(beta)[GWAS], ' rank'))) + ylab(expression(paste(beta-hat(beta)[GWAS]))) + annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2, label=as.character(expression(paste("E[",beta, "|", hat(beta),"]",` `!=hat(beta)))), parse=T) + geom_smooth(method='lm', se=TRUE)
+pebr = qplot(1:m, (beta_o - beta_o_blup)[order(beta_o_blup)]) + geom_abline(slope=0) + xlab(expression(paste(hat(beta)[BLUP], ' rank'))) + ylab(expression(paste(beta-hat(beta)[BLUP]))) + annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2, label=as.character(expression(paste("E[",beta, "|", hat(beta),"] = ", hat(beta)))), parse=T) + geom_smooth(method='lm', se=TRUE)
+
+lim = quantile(abs(beta_o_gwas), .98)
+ptg = qplot(beta_o, beta_o_gwas) + geom_point() + geom_abline() + geom_smooth(method='lm', se=TRUE) + coord_cartesian(xlim=c(-lim, lim), ylim=c(-lim, lim)) + xlab(expression(paste(beta))) + ylab(expression(paste(hat(beta)[GWAS])))
+ptb = qplot(beta_o, beta_o_blup) + geom_point() + geom_abline() + geom_smooth(method='lm', se=TRUE) + coord_cartesian(xlim=c(-lim, lim), ylim=c(-lim, lim)) + xlab(expression(paste(beta))) + ylab(expression(paste(hat(beta)[BLUP])))
+peg = qplot(beta_o_gwas, beta_o) + geom_point() + geom_abline() + geom_smooth(method='lm', se=TRUE) + coord_cartesian(xlim=c(-lim, lim), ylim=c(-lim, lim)) + xlab(expression(paste(hat(beta)[GWAS]))) + ylab(expression(paste(beta)))
+peb = qplot(beta_o_blup, beta_o) + geom_point() + geom_abline() + geom_smooth(method='lm', se=TRUE) + coord_cartesian(xlim=c(-lim, lim), ylim=c(-lim, lim)) + xlab(expression(paste(hat(beta)[BLUP]))) + ylab(expression(paste(beta)))
+
+
+p = arrangeGrob(grobs=list(ptg, ptgr, ptb, ptbr, peg, pegr, peb, pebr), ncol=4)
+p = arrangeGrob(textGrob(paste('GWAS', paste(rep(' ', 80), collapse=''), 'BLUP'), gp=gpar(fontsize=16)), heights=unit.c(unit(24, "points"), unit(1, "npc") - unit(24, "points")), p)
+grid.draw(p)
+
+#' 
+#' 
+#' **First row: conditioning on true effects. Second row: conditioning on estimated effects.**
+#' 
+#' Both meanings of unbiasedness have an implication on what the covariance between true and estimated effect sizes is. For unbiasedness in the first (OLS) sense:
+#' 
+#' $$cov(\beta, \hat{\beta}_{GWAS}) = var(\beta)$$
+#' and for unbiasedness in the second (BLUP) sense:
+#' 
+#' $$cov(\beta, \hat{\beta}_{BLUP}) = var(\hat{\beta}_{BLUP})$$
+#' 
+#' This is why the regression slopes in the above plots are around one, if the unbiasedness condition is met ($\text{slope of y ~ x} = \frac{cov(x,y)}{var(x)}$).
+#' 
+#' 
+#' \ 
+#' 
+#' ### Fixed effects vs random effects
+#' 
+#' By now the terms fixed effects and random effects have been mentioned a few times without having been defined. If you, as I have, looked online what the definition of fixed and random effects is, chances are you are a bit confused at this point. There are many different definitons of these terms that have little in common with one another. One thing that everyone can agree on is that a mixed effects model gets its name from having both fixed and random effects.
+#' 
+#' Here is how the terms fixed and random effects are used in the present context: SNP effects are modeled as random effects, everything else (age, sex, a couple of principal components, cohort) is modeled as a fixed effects (here, we don't have any fixed effects for simplicity). In concrete terms that means that in a mixed effects model OLS or [GLS (generalized least squares)](https://en.wikipedia.org/wiki/Generalized_least_squares) is used to estimate fixed effects (without shrinkage) and BLUP is used to estimate random effects (with shrinkage). Both can be estimated simultaneously in a mixed effects model to account for the covariance between fixed and random effects (see Henderson's mixed model equation). Usually the fixed effects are much smaller in number than the random effect (SNPs). That means that there is a practical reason for modelling SNPs as random: With $M > N$ it is impossible to estimate the effect of each SNP without shrinkage.
+#' 
+#' Sometimes you will also hear that random effects are modelled as coming from a random distribution, whereas fixed effects are not. This is equivalent to the above statement about shrinking effect sizes, because BLUP can be viewed as a Bayesian method which assumes that the SNP effects come from a normal prior distribution with a mean of 0 and a variance that is determined by $h^2$: Low $h^2$ means the prior distribution will have a small variance, so all effects will be shrunk heavily towards 0. A large $h^2$ means that the prior distribution will have a large variance, and so it will be less informative and will have a smaller effect on the posterior distribution of effect sizes (the BLUP estimates), so that the effects will be shrunk less. A fixed effect is thus equivalent to a random effect with a prior distribution that has infinite variance and will not be shrunk at all. Growing sample size will not affect the absolute value of the shrinkage factor $\lambda$, but it will make it smaller relative to the diagonal elements in $\textbf{X}^\top \textbf{X}$, so the prior distribution will have less effect on the posterior distribution.
+#' 
+#' 
+## ----bayesian_blup, echo=FALSE, fig.cap='**Distribution of true and estimated effect sizes**'----
+dat = rbind(data.frame(type='blup', values=beta_blup),
+            data.frame(type='gwas', values=beta_gwas),
+            data.frame(type='true', values=beta))
+
+ggplot(dat, aes(values, linetype=type)) +
+  stat_function(fun=dnorm, geom='area', fill='#33cc33', alpha=.1, args=list(0, sqrt(h2/m))) +
+  geom_density() +
+  xlab('effect size') + ylab('density') +
+  annotate('text', sd(beta), dnorm(sd(beta), 0, sd(beta)), hjust=-0.5, vjust=0, label=as.character(expression(beta)), parse=T) +
+  annotate('text', sd(beta_blup), dnorm(sd(beta_blup), 0, sd(beta_blup)), hjust=-0.5, vjust=0, label=as.character(expression(hat(beta)[BLUP])), parse=T) +
+  annotate('text', sd(beta_gwas), dnorm(sd(beta_gwas), 0, sd(beta_gwas)), hjust=-0.5, vjust=0, label=as.character(expression(hat(beta)[GWAS])), parse=T) +
+  theme(legend.position='none')
+
+#' 
+#' 
+#' **The green shaded area represents the prior distribution for the BLUP effect size estimation and should closely follow the distribution of the true effect sizes. The "prior distribution" of the GWAS effect estimates has infinite variance.**
+#' 
+#' 
+#' This is in contrast with another definition of random effects, which occurs in the context of hierarchical models with multiple observations in different groupings, for example multiple observations per individual. According to this definition, the effect of an individual would be treated as a random, if the people on which data have been collected were of no particular interest, and if those people are rather seen as random sample of a bigger population. 
+#' 
+#' The SNP model is an adaptation from the earlier pedigree model which was used to estimate breeding values of cows and other animals. This pedigree model does indeed have a hierarchical, nested structure in which multiple cows belonging to the same family are being grouped together. A random effect in the pedigree model is a random effect according to both definitions. With the introduction of SNP genotyping arrays, the model has been adapted so that relationships between cows were not modeled anymore by grouping them into families, but by treating them all as unrelated and calculating their genetic similarity using genome wide SNP data. The pedigree based relatedness matrix has been replaced by the GRM, and the term random effects for breeding values / genetic effects is still used, but the term random effects now only refers to the first definition.
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Meta-analysis
+#' 
+#' Often GWAS are performed on smaller cohorts. The summary statistics ($\hat{\beta}_{GWAS}$ and $SE_{\hat{\beta}_{GWAS}}$) of multiple smaller GWAS can be combined to increase power. This is in contrast to a Mega-analysis in which individual level genotype data from multiple small cohorts is combined.
+#' 
+#' In this and the next section, $\hat{\beta}$ is short for $\hat{\beta}_{j,GWAS}$ and can also refer to the non-standardized version of the effect estimate ($\hat{\beta^*}_{j,GWAS}$).
+#' 
+#' Meta analysed $\hat{\beta}$ values over $c$ cohorts can be obtained as:
+#' 
+#' $$\hat{\beta}_{META} = \frac{\sum_c \frac{\hat{\beta}_{c}}{SE^2_{\hat{\beta}_{c}}}}{\sum_c \frac{1}{SE^2_{\hat{\beta}_{c}}}} \qquad
+#' SE_{\hat{\beta}_{META}} = \sqrt{\frac{1}{\sum_c \frac{1}{SE^2_{\hat{\beta}_{c}}}}}
+#' $$
+#' 
+#' 
+#' 
+#' Let's get meta-analyzed summary statistics first.
+#' 
+## ----meta1---------------------------------------------------------------
+cohort_stats = list()
+num = 10
+first = floor(seq(1, n+1, len=num+1))
+last = first[-1]-1
+for(i in 1:num) {
+  nc = last[i] - first[i]
+  x_oc = x_o[first[i]:last[i],]
+  yc = y[first[i]:last[i],]
+  beta_oc = t(x_oc) %*% yc / diag(t(x_oc) %*% x_oc)
+  sec = sqrt(1/(varx*nc))
+  cohort_stats[[i]] = data.frame(beta_oc, sec)
+}
+
+#' 
+#' And now meta-analyze them, one cohort at a time.
+#' 
+## ----meta2, fig.cap='**Effect estimates from a meta-analysis and a mega-analysis**'----
+numer_one_cohort = lapply(cohort_stats, function(x) x$beta_oc/x$sec^2)
+denom_one_cohort = lapply(cohort_stats, function(x) 1/x$sec^2)
+numer_sums = do.call('cbind', Reduce(`+`, numer_one_cohort, accumulate = TRUE))
+denom_sums = do.call('cbind', Reduce(`+`, denom_one_cohort, accumulate = TRUE))
+beta_o_meta = numer_sums/denom_sums
+
+dat = data.frame(maf, beta_o_gwas, beta_o_meta=beta_o_meta[,num])
+ggplot(dat, aes(beta_o_gwas, beta_o_meta, col=log10(maf))) +
+  geom_point() + geom_abline() +
+  xlab(expression(hat(paste(beta^"*"))[GWAS])) +
+  ylab(expression(hat(paste(beta^"*"))[META]))
+  
+
+#' 
+#' **Low MAF SNPs are more likely to be outliers.**
+#' 
+#' 
+## ----meta3, fig.cap='**Sequentially adding more cohorts to a meta-analysis**'----
+minmaf = .1
+cor_mega = cor(beta_o[maf > minmaf], beta_o_gwas[maf > minmaf])
+corrs = sapply(1:num, function(i) cor(beta_o[maf > minmaf], beta_o_meta[maf > minmaf, i]))
+
+dat = data.frame(name=c(num+1, 1:num), corr=c(cor_mega, corrs))
+ggplot(dat, aes(as.factor(name), corr, fill=corr)) +
+  geom_col() +
+  scale_x_discrete(labels=c(1:num, 'mega')) +
+  xlab('number of cohorts in meta-analysis') +
+  ylab('correlation between meta-analysed and true effects') +
+  scale_fill_gradient(low='black', high='purple')
+
+#' 
+#' \ 
+#' 
+#' 
+#' ### De-meta-analysis
+#' 
+#' It is also possible to exclude the effects of one cohort from GWAS summary statistics, using a de-meta-analysis:
+#' 
+#' $$\hat{\beta}_{DE-META} = \hat{\beta}_{META} - SE^2_{\hat{\beta}_{DE-META}}  \sum_c \frac{\hat{\beta}_{c} - \hat{\beta}_{META} }{SE^2_{\hat{\beta}_{c}}}$$
+#' 
+#' \ 
+#' 
+#' $$
+#' SE_{\hat{\beta}_{DE-META}}  = \sqrt{\frac{1}{\frac{1}{SE^2_{\hat{\beta}_{META}}}-\sum_c \frac{1}{SE^2_{\hat{\beta}_{c}}}}}
+#' $$
+#' 
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' ### Variance of GWAS estimates
+#' 
+#' We have previously looked at the sampling variance of a SNP effect estimate, $var(\hat{\beta}_{j,GWAS} \mid \beta_j)$. Often variance of a SNP effect estimate, $var(\hat{\beta}_{j,GWAS})$, is also of interest.  While $var(\hat{\beta}_{j,GWAS} \mid \beta_j)$ estimates the variance of $\hat{\beta}_{j,GWAS}$, assuming that the true effect size is kept constant but the sampling process is repeated, $var(\hat{\beta}_{j,GWAS})$ estimates the variance of $\hat{\beta}_{j,GWAS}$ assuming that both the assignment of a true effect and the sampling process are repeated.
+#' 
+#' If $var(\hat{\beta}_{j,GWAS})$ is i.i.d. for all SNPs $j$, $var(\hat{\beta}_{j,GWAS})$ will be equal to the variance across all SNPs, $var(\hat{\boldsymbol{\beta}}_{GWAS})$. The true effect sizes here are i.i.d., and this is why $var(\beta_j) = var(\boldsymbol{\beta}) = \frac{h^2}{M}$.
+#' 
+#' \ 
+#' 
+#' #### Variance of standardized GWAS estimates
+#' 
+#' From an earlier section we know that if $var(\textbf{y}) = 1$ and the variance explained per SNP is small,
+#' 
+#' $$var(\hat{\beta}_{j,GWAS} \mid \beta_j) = var(\hat{\beta}_{j,GWAS} - \beta_j) = \frac{1}{N}$$
+#' 
+#' We also know that
+#' $$var(\beta_j) = \frac{h^2}{M}$$
+#' 
+#' 
+#' 
+#' From this we are able to get $var(\hat{\beta}_{j,GWAS})$.
+#' 
+#' [Wikipedia tells us](https://en.wikipedia.org/wiki/Variance#Basic_properties) that $var(X - Y) = var(X) + var(Y) - 2\times cov(X,Y)$, so:
+#' 
+#' $$var(\hat{\beta}_j - \beta_j) = var(\hat{\beta}_j) + var(\beta_j) - 2 \times cov(\hat{\beta}_j, \beta_j)$$
+#' 
+#' OLS estimates are unbiased, in the sense that $\mathbb{E}[\hat{\beta}_j \mid \beta_j] = \beta_j$. This implies that $cov(\beta_j, \hat{\beta}_j) = var(\beta_j)$.
+#' 
+#' From this it follows that
+#' 
+#' $$
+#' \begin{aligned}
+#' var(\hat{\boldsymbol{\beta}}_{GWAS}) &= \\
+#' \\
+#' var(\hat{\beta}_{j,GWAS}) &= var(\beta_j) + var(\hat{\beta}_{j,GWAS} - \beta_j) \\
+#' \\
+#'              &= \frac{h^2}{M} + \frac{1}{N}
+#' \end{aligned}
+#' $$
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' #### The effect of LD on the variance of GWAS estimates
+#' 
+#' 
+#' The derivation above uses the unbiasedness property of OLS estimates. However, the unbiasedness and consistency of OLS estimates depends on [certain assumptions](https://en.wikipedia.org/wiki/Ordinary_least_squares#Assumptions), which are not all met in a GWAS setting. Specifically, the model is not correctly specified, if the model doesn't include important explanatory factors for $\textbf{y}$ that are correlated with $\textbf{X}_j$ (SNPs in LD with SNP $j$). Not including these other SNPs can lead to [omitted-variable bias](https://en.wikipedia.org/wiki/Omitted-variable_bias). It's easy to see that this will create bias when you consider only two SNPs which are highly correlated and together explain most of the variance. Including only one of them in the model will induce a correlation between the error term and $\textbf{X}_j$ and lead to a biased estimate, where the bias depends on the LD between the two SNPs.
+#' 
+#' In a polygenic setting, this bias will not be very large, but can still be noticeable, especially if LD is widespread and $N$ is large compared to $M$. In this case, a better approximation of $var(\hat{\beta}_{j,GWAS})$ is
+#' 
+#' $$var(\hat{\beta}_{j,GWAS}) = l_j \frac{h^2}{M} + \frac{1}{N}$$
+#' where $l_j$ is the LD-score of SNP $j$.
+#' 
+#' The LD score regression method is based on this observation.
+#' 
+#' Averaged over all SNPs, this becomes
+#' 
+#' $$var(\hat{\boldsymbol{\beta}}_{GWAS}) = \frac{h^2}{M_e} + \frac{1}{N}$$
+#' 
+#' 
+## ----var_beta_gwas, fig.cap='**Expected and observed beta variance**'----
+dat = data.frame(type1=c('observed', 'observed', 'expected', 'expected', 'observed', 'expected'),
+                type2=c('true_effects', 'estimated_effects', 'true_effects',
+                        'estimated_effects', 'estimated_effects_ld', 'estimated_effects_ld'),
+                value=c(var(beta), var(beta_gwas), h2/m, h2/m + 1/n,
+                        var(beta_gwasld), h2/meld + 1/n  ))
+dat$type2 = factor(dat$type2, levels=levels(factor(dat$type2))[c(3,1,2)])
+
+ggplot(dat, aes(type1, value, fill=type1)) +
+  geom_col() +
+  facet_wrap(~ type2, scales='free_x') +
+  xlab('') +
+  ylab(expression(paste("var(",hat(beta),") / var(",beta,")"))) +
+  theme(legend.position = 'none')
+
+#' 
+#' **For the genotypes without LD, the variance across all estimates is well approximated by $\frac{h^2}{M} + \frac{1}{N}$, for the genotypes with LD, the variance across all estimates is better approximated by $\frac{h^2}{M_e} + \frac{1}{N}$**
+#' 
+#' 
+#' <!-- In the above taking the mean across all LD scores doesn't have to result in the right answer. It's better to stratify by LD scores: -->
+#' 
+#' <!-- ```{r var_beta_gwas2} -->
+#' <!-- ss = 5 -->
+#' <!-- sequ = seq(0, max(ldscoresld), ss) -->
+#' <!-- bins = cut(ldscoresld, sequ) -->
+#' <!-- binMeans = (sequ + ss/2)[-length(sequ)] -->
+#' <!-- dat = data.frame(observed=tapply(beta01_gwasld, bins, var), -->
+#' <!--                 expected=binMeans * h2/m + 1/n, -->
+#' <!--                 binNum=1:length(binMeans)) -->
+#' 
+#' <!-- ggplot(dat, aes(expected, observed, col=binMeans)) + -->
+#' <!--   geom_text(aes(label=binNum)) + geom_abline() + -->
+#' <!--   scale_colour_continuous(low='black', high='green') + -->
+#' <!--   xlab(expression(paste(bar(l)[bin] %.% frac(h^2, M) + frac(1, N)))) + -->
+#' <!--   ylab(expression(paste(var(hat(beta))))) -->
+#' <!-- ``` -->
+#' 
+#' <!-- **Observed and expected variance of $\hat{\beta}_{GWAS}$ stratified by LD score. At small sample sizes and SNP numbers, the relation between LD scores and $var(\hat{\beta})$ may not be obvious.** -->
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' 
+#' #### Variance of un-standardized GWAS estimates
+#' 
+#' $var(\hat{\beta}_{j,GWAS})$ is identically distributed for each SNP for each SNP, if $\beta_j$ is identically distributed for each SNP. But the same is not true for $\hat{\beta^*}_{j,GWAS}$, which is $\hat{\beta^*}_{j,GWAS} = \frac{\hat{\beta}_{j,GWAS}}{\sqrt{2p_j (1-p_j)}}$. Here, the variance of rare SNPs is larger than that of common SNPs. A SNP with MAF zero has infinite variance, and this makes the expectation of $var(\hat{\boldsymbol{\beta}^*}_{GWAS})$ infinte too, for a MAF range beginning at zero.
+#' 
+#' 
+#' <!-- If we just estimated $var(\hat{\beta^*}_{j,GWAS})$, we would get a different estimate for each SNP, depending on its allele frequency. So how can we get an estimate across all SNPs? -->
+#' 
+#' <!-- $var(\hat{\beta}^*_{GWAS}) = var(\frac{\hat{\beta}_{GWAS}}{\sqrt{2p (1-p)}})$ and we know that $\hat{\beta}_{GWAS}$ is independent of $\sqrt{2p (1-p)}$, so we can treat this as the product of two independent random variables $X$ and $Y$: -->
+#' 
+#' <!-- $$var(XY) = \mathbb{E}[X^2Y^2] - (\mathbb{E}[XY])^2 = var(X)var(Y) + var(X) (\mathbb{E}[Y])^2 + var(Y) (\mathbb{E}[X])^2$$ -->
+#' 
+#' <!-- where $X := \hat{\beta}_{GWAS}$ and $Y := \frac{1}{\sqrt{2p (1-p)}}$ -->
+#' 
+#' <!-- So -->
+#' 
+#' <!-- $$ -->
+#' <!-- \begin{aligned} -->
+#' <!-- var(\frac{\hat{\beta}_{GWAS}}{\sqrt{2p (1-p)}}) &= var(\hat{\beta}_{GWAS}) var(\frac{1}{\sqrt{2p (1-p)}}) + var(\hat{\beta}_{GWAS}) (\mathbb{E}[\frac{1}{\sqrt{2p (1-p)}}])^2 + var(\frac{1}{\sqrt{2p (1-p)}}) (\mathbb{E}[\hat{\beta}_{GWAS}])^2 \\ -->
+#' <!-- \\ -->
+#' <!-- &= var(\hat{\beta}_{GWAS}) var(\frac{1}{\sqrt{2p (1-p)}}) + var(\hat{\beta}_{GWAS}) (\mathbb{E}[\frac{1}{\sqrt{2p (1-p)}}])^2\\ -->
+#' <!-- \end{aligned} -->
+#' <!-- $$ -->
+#' 
+#' <!-- and -->
+#' 
+#' <!-- $$var(\frac{1}{\sqrt{2p (1-p)}}) = \mathbb{E}[\frac{1}{2p (1-p)}] - (\mathbb{E}[\frac{1}{\sqrt{2p (1-p)}}])^2$$ -->
+#' 
+#' <!-- If we assume that $p$ is uniformly distributed between 0 and 0.5 and apply the [law of the unconscious statistician](https://en.wikipedia.org/wiki/Law_of_the_unconscious_statistician) to $\mathbb{E}[\frac{1}{2p (1-p)}]$ and $(\mathbb{E}[\frac{1}{\sqrt{2p (1-p)}}])^2$, we find that $var(\frac{1}{\sqrt{2p (1-p)}})$ does not result in a finite value. So if we assume a uniform distribution of $p$, the expectation for $var(\hat{\beta^*}_{GWAS})$ depends on the range of allele frequencies considered and only has a finite value if the lower end of the range is larger than zero. -->
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' ### Comparison between different BLUP formulations
+#' 
+#' The BLUP equation here looks very different from more common formulations of the BLUP model, for example in the animal breeding literature. This is partly due to different notation and partly because the animal model is a pedigree model in which different individuals are modeled as being part of different families. In the model that is used here, there is no such hierarchical structure, which simplifies the model. Lynch and Walsh (Eq. 26.4) defines BLUP (individual effects) as follows:
+#' 
+#' $$\hat{\textbf{u}} = \textbf{GZ}^\top\textbf{V}^{-1}(y-\textbf{X}\hat{\boldsymbol{\beta}})$$
+#' 
+#' This equation uses a different notation and makes different assumptions than what is presented in this document. The following table compares the notation.
+#' 
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |Lynch and Walsh (pedigree model)               |Meaning                                             |This document (SNP model)                                     |
+#' +===============================================+====================================================+==============================================================+
+#' |$\hat{\textbf{u}}$                             |estimated genetic effects                           |$\hat{\textbf{g}}$                                            |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$\textbf{G}$                                   |covariance matrix of random genetic effects:        |$\sigma_g \textbf{A}$                                         |
+#' |                                               |pedigree matrix or SNP based matrix                 |                                                              |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$\textbf{Z}$                                   |Incidence matrix in case of pedigree design.        |not relevant ($\textbf{I}$)                                   |
+#' |                                               |For unrelated individuals this is a diagonal        |                                                              |
+#' |                                               |matrix and can be ignored                           |                                                              |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$\textbf{V} = \textbf{ZGZ}^\top + \textbf{R}$  |variance-covariance matrix of phenotype vector      |$\textbf{V} = \sigma_g \textbf{A} + \sigma_e \textbf{I}_N$    |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$y$                                            |phenotypes. In L&W, not standardised. Here, it      |$\textbf{y}$                                                  |
+#' |                                               |is assumed that they have mean 0, variance 1,       |                                                              |
+#' |                                               |so $\sigma_g = h^2$. Further, here we assume        |                                                              |
+#' |                                               |that y represents residuals after accounting        |                                                              |
+#' |                                               |for covariates or fixed effects.                    |                                                              |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$\textbf{X}$                                   |Incidence matrix of fixed effects                   |not relevant ($0$)                                            |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#' |$\hat{\boldsymbol{\beta}}$                     |Effect sizes of fixed effects                       |not relevant ($0$)                                            |
+#' +-----------------------------------------------+----------------------------------------------------+--------------------------------------------------------------+
+#'                                        
+#' 
+#' After substituting L&W terminology with the terminology used here, the equation above can be rewritten as
+#' 
+#' 
+#' $$
+#' \begin{aligned}
+#' \hat{\textbf{g}} &= \textbf{X}^* \hat{\boldsymbol{\beta}^*}_{BLUP} = \textbf{X} \hat{\boldsymbol{\beta}}_{BLUP} \\
+#'                      \\
+#'                      &= h^2 \frac{\textbf{X}\textbf{X}^\top}{M} (h^2 \frac{\textbf{X}\textbf{X}^\top}{M} + (1-h^2) \textbf{I}_N)^{-1} \textbf{y} \\
+#'                      \\
+#'                      &= \textbf{X}\textbf{X}^\top (\textbf{X}\textbf{X}^\top + \frac{M(1-h^2)}{h^2} \textbf{I}_N)^{-1} \textbf{y} \\
+#'                      \\
+#'                      &= \textbf{X}(\textbf{X}^\top\textbf{X} + \frac{M(1-h^2)}{h^2} \textbf{I}_M)^{-1} \textbf{X}^\top \textbf{y} \\
+#'                      \\
+#'                      &= \textbf{X}(\textbf{X}^\top\textbf{X} + \lambda \textbf{I}_M)^{-1} \textbf{X}^\top \textbf{y}
+#' \end{aligned}
+#' $$
+#' 
+#' From this, it follows that
+#' 
+#' $$\hat{\boldsymbol{\beta}}_{BLUP} = (\textbf{X}^\top\textbf{X} + \lambda \textbf{I}_M)^{-1} \textbf{X}^\top \textbf{y}$$
+#' and so the two models are identical if we assume the absence of fixed effects.
+#' 
+#' \ 
+#' 
+#' 
+#' ----
+#' 
+#' ## Prediction
+#' 
+#' Estimated SNP effects ($\hat{\boldsymbol{\beta}}$) can easily be converted into predictors of genetic effects for individuals ($\hat{\textbf{g}}$):
+#' 
+#' $$\hat{g_i} = \sum_j X_{ij} \hat{\beta_j}$$
+#' 
+#' In matrix notation:
+#' 
+#' $$\hat{\textbf{g}} = \textbf{X} \hat{\boldsymbol{\beta}}$$
+#' Unless we have a prediction model that incorporates nongenetic factors, this is also our phenotype predictor:
+#' 
+#' $$\hat{\textbf{y}} = \hat{\textbf{g}} = \textbf{X} \hat{\boldsymbol{\beta}}$$
+#' Generally, more accurate $\hat{\boldsymbol{\beta}}$ will result in more accurate $\hat{\textbf{g}}$.
+#' 
+#' 
+#' 
+#' ### The importance of an independent test set
+#' 
+#' The first rule of any kind of prediction is that the training set, which is used to train a predictor, has to be strictly separated from the testing set, which is used to evaluate the predictor. Otherwise the accuracy of the predictor will be highly overestimated.
+#' 
+#' That is why we will first create an independent test set of equal size and equal allele frequencies, and then use the true effect sizes to again simulate phenotypes in this independent set.
+#' 
+## ----prediction1---------------------------------------------------------
+x012test = apply(x012, 2, sample)
+x_otest = scale(x012test, scale=FALSE)
+xtest = scale(x012test, scale=TRUE)
+
+
+# simulate test set phenotypes
+gtest = xtest %*% beta
+etest = rnorm(n, 0, sqrt(1-h2))
+ytest = gtest + etest
+
+
+# same for data with LD
+x012ldtest = jitter(x012test[,rep(1:m, 1:m)[1:m]], .03)
+xldtest = scale(x012ldtest)
+
+gldtest = xldtest %*% beta
+eldtest = rnorm(n, 0, sqrt(1-h2))
+yldtest = gldtest + eldtest
+
+#' 
+#' Creating individual predictors from SNP effects is very simple. Apart from scaling, the following is equivalent to ```plink --score```.
+#' 
+## ----prediction2---------------------------------------------------------
+ghat_train_gwas = x %*% beta_gwas
+ghat_test_gwas = xtest %*% beta_gwas
+
+# for data with LD
+ghat_test_gwasld = xldtest %*% beta_gwasld
+
+#' 
+#' 
+## ----prediction3, echo=TRUE, fig.cap='**Prediction accuracy if training and test set are not independent**'----
+# confounded data set
+xconf = rbind(x, xtest[1:floor(n/10),])
+yconf = c(y, ytest[1:floor(n/10)])
+beta_gwas_conf = t(xconf) %*% yconf / diag(t(xconf) %*% xconf)
+
+ghat_conf_gwas = xtest %*% beta_gwas_conf
+
+ghat_train_blup = x %*% beta_blup
+ghat_test_blup = xtest %*% beta_blup
+
+dat = data.frame(predictor=c('training', 'test', 'test_confounded_10%'),
+                 corr=c(cor(y, ghat_train_gwas),
+                        cor(ytest, ghat_test_gwas),
+                        cor(ytest, ghat_conf_gwas)))
+ggplot(dat, aes(predictor, corr, fill=predictor)) +
+  geom_col() +
+  xlab('') + ylab('correlation') +
+  theme(legend.position='none')
+
+
+#' 
+#' 
+#' **The red bar represents prediction accuracy in an independent set. The green bar is prediction accuracy in an independent set, but 10% of the independent set went into the training set, so it's not independent anymore. The blue bar represent accuracy in the same sample that was used to estimate SNP effects. Only the red bar is a useful measure of prediction accuracy.** 
+#' 
+#' 
+#' \ 
+#' 
+#' ### Accuracy of a GWAS predictor
+#' 
+#' The expected accuracy of a GWAS predictor, measured as the correlation between predicted breeding value and the phenotype in an independent sample, is given by:
+#' 
+#' $$cor^2(\textbf{y}, \hat{\textbf{g}}_{GWAS}) = \frac{h^2}{1+\frac{M_e}{N h^2}}$$
+#' 
+#' In case you wonder why:
+#' 
+#' $$
+#' \begin{aligned}
+#' cor^2(\textbf{y}, \hat{\textbf{g}}_{GWAS}) &= \frac{cov^2(\textbf{y}, \hat{\textbf{g}}_{GWAS})}{var(\textbf{y})var(\hat{\textbf{g}}_{GWAS})} && \text{definition of correlation} \\
+#'                      \\
+#'                      &= \frac{cov^2(\textbf{g} + \textbf{e}, \hat{\textbf{g}}_{GWAS})}{var(\hat{\textbf{g}}_{GWAS})} && var(\textbf{y})=1 \text{, definition of } \textbf{y} \\
+#'                      \\
+#'                      &= \frac{cov^2(\sum_j \textbf{X}_j  \beta_j, \sum_j \textbf{X}_j  \hat{\beta}_{j,GWAS})}{var(\sum_j \textbf{X}_j  \hat{\beta}_{j,GWAS})} && \textbf{g} \text{ and } \textbf{e} \text{ are uncorrelated, definition of } \textbf{g},~ \hat{\textbf{g}}_{GWAS} \\
+#'                      \\
+#'                      &= \frac{M^2 \times cov^2(\beta_j, \hat{\beta}_{j,GWAS})}{M \times var(\hat{\beta}_{j,GWAS})} && \text{assuming SNPs are independent} \\
+#'                      \\
+#'                      &= \frac{M \times cov^2(\beta, \hat{\beta}_{GWAS})}{var(\hat{\beta}_{GWAS})} && \beta \text{ are i.i.d.} \\
+#'                      \\
+#'                      &= \frac{M \times var^2(\beta)}{var(\hat{\beta}_{GWAS})} && \text{follows from OLS unbiasedness} \\
+#'                      \\
+#'                      &= \frac{M (\frac{h^2}{M})^2}{\frac{h^2}{M} + \frac{1}{N}} && \text{derived in earlier sections} \\
+#'                      \\
+#'                      &= \frac{h^2}{1 + \frac{M}{N h^2}} && \text{rearrange} \\
+#' \end{aligned}
+#' $$
+#' 
+#' This derivation assumes independent markers, which means that $M = M_e$. In order for the equation to be applicable to data sets with non-independent markers, $M$ has to be replaced by $M_e$.
+#' 
+#' 
+#' \ 
+#' 
+#' ### Accuracy of a BLUP predictor
+#' 
+#' In the derivation above, we used an estimate of $var(\hat{\beta}_{GWAS})$ of $\frac{h2}{M_e} + \frac{1}{N}$, where $\frac{1}{N}$ is the standard error of the estimate. In a model that fits all SNPs at the same time, the standard error is better estimated as $\frac{1-R^2}{N}$, where $R^2$ is the variance explained by all SNP effect estimates. This is at the same time the expected accuracy of our predictor, and is smaller than an estimate of the variance explained by all SNPs (SNP-heritability), because each SNP has an estimation error. If we use this estimate of the standard error, then the expected prediction accuracy becomes:
+#' $$cor^2(\textbf{y}, \hat{\textbf{g}}) = R^2 = \frac{h^2}{1 + \frac{M_e (1-R^2)}{N h^2}}$$
+#' 
+#' This doesn't account for the overfitting problem that $\hat{\beta}_{OLS}$ estimates have, so it is not a good estimate of the accuracy of a predictor based on $\hat{\beta}_{OLS}$, but it is a good estimator of the accuracy of a $\hat{\beta}_{BLUP}$ based predictor.
+#' 
+#' 
+#' $R^2$ occurs on both sides of the equation, but we can solve for $R^2$:
+#' 
+#' $$cor^2(\textbf{y}, \hat{\textbf{g}}_{BLUP}) = R^2 = \frac{k + h^2 - \sqrt{(k+h^2)^2 - 4kh^2}}{2k}$$
+#' 
+#' where $k = \frac{M_e}{N}$
+#' 
+#' Note that $cor^2(\textbf{g}, \hat{\textbf{g}})$ will always be larger than $cor^2(\textbf{y}, \hat{\textbf{g}})$ by a factor of $\frac{1}{h^2}$, because $\textbf{g}$ doesn't contain the error component of $\textbf{y}$:
+#' 
+#' $$cor^2(\textbf{g}, \hat{\textbf{g}}_{BLUP}) = \frac{1}{1 + \frac{M_e (1-R^2)}{N h^2}}$$
+#' 
+#' 
+#' 
+## ----gwas_predictor_accuracy1--------------------------------------------
+R2_GWAS = function(m, n, h2) {
+  h2 / (1 + (m / (n*h2)))
+}
+
+R2_BLUP = function(m, n, h2) {
+  k = m/n
+  ( (k + h2) - sqrt( (k+h2)^2 - 4*k*h2^2) ) / (2*k)
+}
+
+#' 
+#' 
+## ----gwas_predictor_accuracy2, echo=TRUE, fig.cap='**Expected and observed prediction accuracy**'----
+cor.test.plus = function(x, y, ...) {
+  # like cor.test, but also returns se of correlation
+  corr = cor.test(x, y, ...)
+  corr$se = unname(sqrt((1 - corr$estimate^2)/corr$parameter))
+  corr
+}
+
+ghat_test_mlma = xtest %*% beta_mlma
+ghat_test_mlmald = xldtest %*% beta_mlmald
+ghat_test_blup = xtest %*% beta_blup
+ghat_test_blupld = xldtest %*% beta_blupld
+
+cornold = t(sapply(list(ghat_test_gwas, ghat_test_mlma, ghat_test_blup),
+         function(x) {corr = cor.test.plus(ytest, x); c(corr$estimate, corr$se)}))
+corld = t(sapply(list(ghat_test_gwasld, ghat_test_mlmald, ghat_test_blupld),
+         function(x) {corr = cor.test.plus(yldtest, x); c(corr$estimate, corr$se)}))
+dat = data.frame(type=rep(c('GWAS', 'MLMA', 'BLUP'), 2),
+                 ld = c(rep(' without LD', 3), rep('with LD', 3)),
+                 n=n,
+                 corr=c(cornold[,1], corld[,1]),
+                 se=c(cornold[,2], corld[,2]))
+dat$type = factor(dat$type, levels=levels(factor(dat$type))[c(2,3,1)])
+
+nlim = c(ceiling(n/10000), n*300)
+mypal = rev(c('seagreen4', 'royalblue4'))
+ggplot(dat[dat$type != 'MLMA',], aes(n, corr, col=type)) +
+  stat_function(fun=function(...) sqrt(R2_GWAS(...)), args=list(h2=h2, m=me), col=mypal[1]) +
+  stat_function(fun=function(...) sqrt(R2_BLUP(...)), args=list(h2=h2, m=me), col=mypal[2]) +
+  stat_function(fun=function(...) sqrt(R2_GWAS(...)), args=list(h2=h2, m=meld), col=mypal[1], linetype=2) +
+  stat_function(fun=function(...) sqrt(R2_BLUP(...)), args=list(h2=h2, m=meld), col=mypal[2], linetype=2) +
+  scale_x_log10(limits=c(nlim[1], nlim[2])) +
+  geom_point(size=2) +
+  geom_errorbar(aes(ymin=corr-se, ymax=corr+se, linetype=ld), width=.1) +
+  scale_colour_manual(values=mypal) + xlab('sample size') + ylab('correlation') +
+  geom_hline(yintercept = sqrt(h2), linetype=2)
+
+
+#' 
+#' **Prediction accuracy +/- SE of the GWAS and BLUP predictor. Lines show expected accuracy for a range of $N$. The horizontal line represents $\sqrt{h^2}$, which is the upper limit for an (additive) genetic predictor. Dashed lines show accuracies for data with LD. $\beta$ estimates are not more accurate in data without LD, but the combined effect estimate of each LD block is more accurate, since it is averaged over many SNPs. This is why prediction accuracy is higher in data with LD, if the LD structure is the same in the test set. The standard errors of the point estimates are underestimated for the simulations with LD, because the SE estimate assumes that all individual predictors are independent. However, they are not independent because they depend on correlated $\beta$ estimates.**
+#' 
+#' 
+#' From the unbiasedness of BLUP predictors, it follows that $R^2$ is at the same time the expected variance of a BLUP predictor: 
+#' 
+#' $$R^2 = cor^2(\textbf{y}, \hat{\textbf{g}}_{BLUP}) = \frac{cov^2(\textbf{y}, \hat{\textbf{g}}_{BLUP})}{var(\hat{\textbf{g}}_{BLUP})} = var(\hat{\textbf{g}}_{BLUP})$$
+#' 
+#' \ 
+#' 
+#' <!-- What if we made predictors from MLMA estimates? -->
+#' 
+#' <!-- ```{r mlma_predictor_accuracy1} -->
+#' <!-- ggplot(dat, aes(type, corr, fill=type)) + -->
+#' <!--   geom_bar(stat='identity', position='dodge') + -->
+#' <!--   facet_wrap(~ ld) + -->
+#' <!--   geom_errorbar(aes(ymin=corr-se, ymax=corr+se), width=.1) + -->
+#' <!--   xlab('') + ylab('correlation') -->
+#' <!-- ``` -->
+#' 
+#' <!-- **In data with LD, MLMA based predictors are no better than GWAS predictors.** -->
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' 
+#' 
+#' ### SNP selection
+#' 
+#' The predictors so far have been based on all SNPs. In practice people often select SNPs based on their LD with other SNPs or based on their p-value.
+#' 
+#' The motivation behind selecting SNPs based on LD with other SNPs is that GWAS estimates are marginal effect estimates and so regions with high LD will influence the predictor too much.
+#' 
+#' The motivation behind selecting SNPs based on p-value, is that SNPs with low p-value are more likely to be truly associated with the trait, and so the signal to noise ratio of the SNP effects that go into the predictor will increase. This is especially true in well powered studies, where the p-value better separates the causal SNPs from the rest.
+#' 
+#' Since we simulate SNP effects from a normal distribution, all SNPs will have some effect, but even here, selecting based on p-value can slightly increase accuracy.
+#' 
+## ----snpselection1, echo=TRUE, fig.cap='**Selecting SNPs based on p-value**'----
+ghatmat = t(t(xtest) * beta_gwas[,1])
+ghatmat_pval = ghatmat[,order(pval)]
+ghatmat_cumsum = t(apply(ghatmat_pval, 1, cumsum))
+corrs = sapply(1:m, function(i) cor(ytest[,1], ghatmat_cumsum[,i]))
+
+reps = 5
+corrs_rand = replicate(reps, {
+  ghatmat_pval = ghatmat[,sample(1:m)]
+  ghatmat_cumsum = t(apply(ghatmat_pval, 1, cumsum))
+  sapply(1:m, function(i) cor(ytest[,1], ghatmat_cumsum[,i]))
+})
+
+dat = rbind(data.frame(snp=1:m, rep=reps+1, corr=corrs),
+            melt(corrs_rand) %>% rename(snp=Var1, rep=Var2, corr=value))
+maxx = which.max(dat$corr[dat$rep==reps+1])
+maxcor = dat[maxx, 'corr']
+bestsnp = dat[maxx, 'snp']
+p_opt = sort(pval)[bestsnp]
+
+ggplot(dat, aes(snp, corr, col=as.factor(rep))) +
+  geom_line() +
+  geom_hline(yintercept=maxcor, linetype=2) +
+  geom_vline(xintercept=bestsnp, linetype=3) +
+  xlab('number of SNPs included in predictor') +
+  ylab('correlation') +
+  scale_color_manual(values=c(rep('grey', reps), 'navy')) +
+  theme(legend.position='none') +
+  annotate('text', bestsnp, 0, label=paste0('p-value = ', round(p_opt, 2)), hjust=1.1)
+
+
+#' 
+#' **The blue line represent predictors based on an increasing number of SNPs, where SNPs are ordered from lowest to highest p-value from left to right. In comparison the grey lines represent predictors based on increasing numbers of SNPs when the SNPs are randomly selected.**
+#' 
+#' As the plot above illustrates, prediction accuracy randomly fluctuates with inclusion of more or fewer SNPs, so selecting a predictor based on the best p-value threshold can lead to inflated estimates of accuracy.
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Bias-variance tradeoff
+#' 
+#' You would think the words "bias" and "variance" are already overloaded enough, but in this section they will get yet another set of meanings. From [Wikipedia](https://en.wikipedia.org/wiki/Bias%E2%80%93variance_tradeoff):
+#' 
+#' > In statistics and machine learning, the bias-variance tradeoff (or dilemma) is the problem of simultaneously minimizing two sources of error that prevent supervised learning algorithms from generalizing beyond their training set:
+#' >
+#' > * The bias is error from erroneous assumptions in the learning algorithm. High bias can cause an algorithm to miss the relevant relations between features and target outputs (underfitting).
+#' >
+#' > * The variance is error from sensitivity to small fluctuations in the training set. High variance can cause overfitting: modeling the random noise in the training data, rather than the intended outputs.
+#' 
+#' 
+#' So that's another perspective on why BLUP predictors are more accurate than GWAS or OLS predictors: BLUP finds the right balance between the simple GWAS model which only considers one SNP at a time, and the complex multiple regression OLS model, which considers all SNPs at the same time without any safeguard against overfitting the data. The heritability quantifies how much error is in the model and therefore how close BLUP can go towards fully conditional OLS effects, without overfitting the data.
+#' 
+## ----biasvariance1, echo=FALSE, fig.height=6, fig.width=6, fig.cap='**Model complexity of GWAS, BLUP and multiple regression OLS estimates**'----
+fac = 100
+lambdas = 10^seq(log10(lambda/fac), log10(lambda*fac), len=20 )
+dat = data.frame(lambda=lambda,
+                 type=c('train', 'test'),
+                 corr=c(sqrt(mean((y - ghat_train_blup)^2)), test=sqrt(mean((ytest - ghat_test_blup)^2))))
+                 #corr=c(cor(y, ghat_train_blup), test=cor(ytest, ghat_test_blup)))
+
+for(lam in lambdas) {
+  bl = solve(t(x) %*% x + diag(m)*lam ) %*% t(x) %*% y
+  gh_train = x %*% bl
+  gh_test = xtest %*% bl
+  dat = rbind(dat, data.frame(lambda=lam,
+                              type=c('train', 'test'),
+                              corr=c(sqrt(mean((y - gh_train)^2)), test=sqrt(mean((ytest - gh_test)^2)))))
+                              #corr=c(cor(y, gh_train), test=cor(ytest, gh_test))))
+}
+dat$type = factor(dat$type, levels=c('train', 'test'))
+
+
+sp = paste(rep(' ', 4), collapse='')
+ggplot(dat, aes(lambda, corr)) +
+  geom_line(aes(col=type)) +
+  geom_point(aes(col=type)) +
+  scale_x_continuous(trans=trans_new('', function(x) -log10(x), inverse=function(x) 10^-x, log_breaks(base = 10), domain=c(1e-100, Inf))) +
+  #facet_wrap(~ type, scales='free_y', ncol=1) +
+  geom_vline(xintercept=lambda, linetype=3) +
+  ylab('prediction error (RMSE)') +
+  xlab(expression(paste(atop(atop(lambda,
+                                  ` ` %<-% 'GWAS (marginal effects)                          BLUP                      OLS (conditional effects)' %->% ` `),
+                             atop(` ` %<-% 'too simple (high bias, low variance)                     too complex (low bias, high variance)' %->% ` `, ''))))) +
+  theme(axis.title.x = element_text(size=14))
+
+
+
+#' 
+#' **The lowest prediction error in the test set is achieved when the model is neither too simple nor too complex. Note that even at equal values of root mean square error (RMSE), predictions into the training set have much higher accuracy than predictions into the test set.**
+#' 
+#' 
+#' ----
+#' 
+#' \ 
+#' 
+#' 
+#' ## Estimation of variance components
+#' 
+#' 
+#' Our model assumes that the phenotypic variance is composed of a genetic component and the rest (environment + error).
+#' 
+#' $$\sigma^2_y = \sigma^2_g + \sigma^2_e$$
+#' 
+#' In practice, we can only measure $\sigma^2_y$, and have to estimate the other components. This is equivalent to estimating the heritability (SNP-heritability, but here we don't make this distinction), since
+#' 
+#' $$h^2 = \frac{\sigma^2_g}{\sigma^2_y}$$
+#' 
+#' If we had an infinite sample size, then $\hat{\beta}_{j,OLS}$ would be the same as $\beta_j$ and we could simply estimate $\sigma^2_g$ as the sum of the variances explained by each SNP:
+#' 
+#' $$\sigma^2_g = \sum_j \beta^{*2}_j var(\textbf{X}^*_j) = \sum_j \beta^2_j$$
+#' 
+## ----varcomp1------------------------------------------------------------
+c(h2, sum(beta^2))
+
+#' 
+#' We can't do the same with finite sample size OLS estimates of $\beta$. Even though they are unbiased in the sense that $\mathbb{E}[\hat{\beta}_{OLS} \mid \beta] = \beta$, when we take the square of $\hat{\beta}_{OLS}$, it will be inflated by the estimation error, and so the $\sigma^2_g$ or $h^2$ estimate will be too large:
+#' 
+## ----varcomp2------------------------------------------------------------
+c(h2, sum(beta_ols^2))
+
+#' 
+#' What if we had infinite sample size GWAS estimates of $\beta$? We still couldn't estimate $\sigma^2_g$ as $\sum_j \hat{\beta}^2_{j,GWAS}$, because GWAS estimates are marginal effect estimates, so if two SNPs are in high LD, their effect would be counted twice, whereas OLS estimates are conditional on all other SNPs, so their effect wouldn't be counted twice. In other words, $\hat{\beta}_{GWAS}$ is not an unbiased estimator of $\beta$ (see section about variance of GWAS effects).
+#' 
+#' \ 
+#' 
+#' Another way to look at $h^2$ is as the variance in $y$ that is explained by $g$. For any two variables, the variance explained in one by the other is given by $R^2$, or the squared correlation coefficient. For $g$ and $y$ this is defined as
+#' 
+#' $$ h^2 = R^2_{\textbf{g},\textbf{y}} = \frac{cov^2(\textbf{g}, \textbf{y})}{var(\textbf{g})var(\textbf{y})} $$
+#' 
+#' $cov(\textbf{g}, \textbf{y})$ is the same as $cov(\textbf{g}, \textbf{g} + \textbf{e})$. [Wikipedia](https://en.wikipedia.org/wiki/Covariance#Properties) tells us that this is the same as $cov(\textbf{g}, \textbf{g}) + cov(\textbf{g}, \textbf{e})$.
+#' $cov(\textbf{g}, \textbf{g})$ is the same as $var(\textbf{g})$, and our model assumes that $\textbf{g}$ and $\textbf{e}$ are uncorrelated, so $cov(\textbf{g}, \textbf{e}) = 0$. Therefore,
+#' $$cov(\textbf{g}, \textbf{y}) = var(\textbf{g})$$
+#' and the equation above simplifies to
+#' 
+#' $$ h^2 = R^2_{\textbf{g},\textbf{y}} = \frac{var(\textbf{g})}{var(\textbf{y})} = \frac{cov(\textbf{g}, \textbf{y})}{var(\textbf{y})} $$
+#' Since the regression slope of $y$ on $x$ is defined as $\frac{cov(x,y)}{var(x)}$, the heritability is the same as the slope in a regression of $\textbf{g}$ on $\textbf{y}$. This is true by definition, but doesn't help us in estimating $h^2$ because we don't know $cov(\textbf{g}, \textbf{y})$ any more than we know $var(\textbf{g})$.
+#' 
+#' However, $var(\textbf{g})$ can be estimated by looking at close relatives. The first attempt at estimating heritability was a regression of height measurements for a number of individuals on the average height of the parents of those individuals. A problem with this method is that it cannot distinguish between genetic and shared environmental effects. There are many other methods to estimate heritability that are based on close relatives, but here we will focus on methods that utilize unrelated individuals.
+#' 
+#' \ 
+#' 
+#' 
+#' ### Variance explained per SNP
+#' 
+#' The genetic variance can be further partitioned into the variances explained by each SNP:
+#' 
+#' $$ var(\textbf{y}) = var(\textbf{g}_j + \textbf{g}_{rest} + \textbf{e}) = var(\textbf{X}_j\beta_j + \textbf{g}_{rest} + \textbf{e}) $$
+#' 
+#' 
+#' If we assume that not only $g$ and $e$ are uncorrelated, but also $g_{j1}$ and $g_{j2}$ (which we can, because we assume that all $\beta_j$ are i.i.d.), then the variance explained by a particular SNP is
+#' 
+#' $$ cor^2(\textbf{g}_j, \textbf{y}) = var(\textbf{g}_j) = var(\textbf{X}_j\beta_j) = \beta^2_j var(\textbf{X}_j) = \beta_j^2 = \beta_j^{*2} \times 2p_j(1-p_j) $$
+#' 
+#' \ 
+#' 
+#' 
+#' The next parts present different methods to estimate $h^2$. Haseman-Elston regression and GREML require a GRM and phenotype data, whereas LD score regression requires GWAS effect estimates and LD scores.
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### Haseman-Elston regression
+#' 
+#' One simple way to estimate $h^2$ is to regress pairwise similarities of phenotypes on pairwise similarities of genotypes. For $N$ individuals, there are $N \times (N-1)$ such pairs.
+#' 
+#' The genetic similarity for two individuals $i1$ and $i2$ is usually calculated as $\frac{\textbf{X}_{i1}\textbf{X}^\top_{i2}}{M}$, which are elements of the GRM.
+#' 
+#' There are two versions of HE-regression, with two different ways to calculate the phenotypic similarity. The first is to take the (negative) squared difference between phenotypes in the two individuals $(y_{i1} - y_{i2})^2$, the other is to take the product of the phenotypes ($y_{i1} \times y_{i2}$).
+#' 
+## ----haseman1------------------------------------------------------------
+
+
+he_regression_v1 = function(A, y) {
+  # estimates h2
+  # A: GRM
+  # y: phenotypes
+  pairs = t(combn(1:length(y), 2))
+  phenosim = y[pairs[,1]] * y[pairs[,2]]
+  genosim = A[lower.tri(A)]
+  unname(lm(phenosim ~ genosim)$coefficients[2])
+}
+
+he_regression_v2 = function(A, y) {
+  # estimates h2
+  # A: GRM
+  # y: phenotypes
+  pairs = t(combn(1:length(y), 2))
+  phenosim = -(y[pairs[,1]] - y[pairs[,2]])^2
+  genosim = A[lower.tri(A)]
+  reg = lm(phenosim ~ genosim)$coefficients
+  unname(-reg[2]/reg[1])
+}
+
+
+
+h2_he_prod = he_regression_v1(grm, y)
+h2_he_diff = he_regression_v2(grm, y)
+
+c(h2, h2_he_prod, h2_he_diff)
+
+
+#' 
+## ----haseman2, fig.width=8, fig.height=4, echo=F, fig.cap='**Two version of Haseman-Elston regression**'----
+
+pairs = t(combn(1:length(y), 2))
+df = data.frame(g=grm[lower.tri(grm)], p=y[pairs[,1]] * y[pairs[,2]])
+val = round(he_regression_v1(grm, y), 2)
+p1 = ggplot(df, aes(g,p)) +
+  geom_point(alpha=.2, size=.1) +
+  geom_smooth(method='lm', formula=y~x) +
+  xlab('genetic similarity') +
+  ylab('phenotypic similarity') +
+  annotate('text', Inf, Inf, hjust=1.2, vjust=1.2, label=as.character(paste0(bquote(hat(h^2)~": "~ ~.(val)), collapse='')), parse=T)
+
+df = data.frame(g=grm[lower.tri(grm)], p=(y[pairs[,1]] - y[pairs[,2]])^2)
+val = round(he_regression_v2(grm, y), 2)
+p2 = ggplot(df, aes(g,p)) +
+  geom_point(alpha=.2, size=.1) +
+  geom_smooth(method='lm', formula=y~x) +
+  xlab('genetic similarity') +
+  ylab('squared phenotypic difference') +
+  annotate('text', Inf, Inf, hjust=1.2, vjust=1.2, label=as.character(paste0(bquote(hat(h^2)~": "~ ~.(val)), collapse='')), parse=T)
+grid.arrange(p1, p2, ncol=2)
+
+#' 
+#' 
+#' 
+#' \ 
+#' 
+#' 
+#' ### GREML
+#' 
+#' HE regression is quick and simple, but suffers from large standard errors, so the estimates will often not be very accurate. A better way to estimate variance components is through GRM residual maximum likelihood estimation (GREML).
+#' 
+#' GREML directly builds on the phenotype model specified earlier:
+#' 
+#' $$ Var[\textbf{y}] = \textbf{V} = \sigma^2_g \textbf{A} + \sigma^2_e \textbf{I}_N  $$
+#' 
+#' It runs an optimization algorithm finds the values of $\sigma^2_g$ and $\sigma^2_e$ that maximize the likelihood of this model. The likelihood of a model with specific parameters ($\sigma^2_g$ and $\sigma^2_e$) is defined as the probability of the data ($\textbf{A}$ and $\textbf{y}$) under this model :
+#' 
+#' 
+#' $$\mathcal{L}(\sigma^2_g, \sigma^2_e \mid \textbf{A}, \textbf{y}) = P(\textbf{A}, \textbf{y} \mid \sigma^2_g, \sigma^2_e)$$
+#' 
+#' Maximizing the likelihood is equivalent to maximizing the logarithm of the likelihood, because the logarithm is a monotonically increasing function. The log likelihood of our model is:
+#' 
+#' $$ log \mathcal{L}(\sigma^2_g, \sigma^2_e \mid \textbf{A}, \textbf{y}) = -\frac{1}{2}(const + log|\textbf{V}| + log|\textbf{1} \textbf{V}^{-1}\textbf{1}^\top| + \textbf{y}^\top \textbf{Py}) $$
+#' 
+#' where $|\textbf{V}|$ is the determinant of $\textbf{V}$ and $\textbf{P}$ is a projection matrix defined as
+#' 
+#' $$ \textbf{P} = \textbf{V}^{-1} - \textbf{V}^{-1}\textbf{1} (\textbf{1}^\top \textbf{V}^{-1} \textbf{1})^{-1} \textbf{1}^\top \textbf{V}^{-1} $$
+#' 
+#' Bear in mind that the description here is simplified a lot because we assume that there are no fixed effects.
+#' 
+#' Here, our model only consists of the two variance components $\sigma^2_g$ and $\sigma^2_e$, so the likelihood can be visualized as a heat map:
+#' 
+## ----likelihood1---------------------------------------------------------
+loglikelihood = function(sigma_g, sigma_e, grm, y, reml=TRUE) {
+  V = sigma_g*grm + sigma_e*diag(nrow(grm))
+  Vi = solve(V)
+  if(reml) {
+    P = Vi - (colSums(Vi) %*% t(colSums(Vi))) / sum(Vi)
+  } else {
+    P = Vi
+  }
+  -0.5*(log(det(V)) + log(sum(Vi)) + t(y) %*% P %*% y)
+}
+
+#' 
+## ----likelihood2, echo=FALSE, fig.height=4, fig.width=6, fig.cap='**The log likelihood function as a heat map**'----
+resolution = 300
+#resolution = 50
+params = expand.grid(seq(0.001,.999,len=resolution), seq(0.001,.999,len=resolution))
+if(file.exists('ll.RData')) {
+  load('ll.RData')
+} else {
+  ll = data.frame(params, Vectorize(loglikelihood, vectorize.args=c('sigma_g', 'sigma_e'))(params[,1], params[,2], grm, y, reml=TRUE))
+}
+names(ll) = c('sigma_g', 'sigma_e', 'log_likelihood')
+ll$log_likelihood[!is.finite(ll$log_likelihood)] = NA
+
+mypal = colorRampPalette(brewer.pal(11, "Spectral"))(20)
+heat = ggplot(ll, aes(sigma_g, sigma_e, fill=log_likelihood)) + geom_tile() +
+  scale_fill_gradientn(colours=rep(rev(mypal), (length(mypal):1)^2),
+                       limits=c(min(ll$log_likelihood, na.rm=TRUE), max(ll$log_likelihood, na.rm=TRUE))) +
+  xlab(expression(sigma[g]^2)) + ylab(expression(sigma[e]^2)) +
+  coord_cartesian(xlim=c(0,1), ylim=c(0,1), expand=FALSE) +
+  geom_point(data=data.frame(sigma_g=h2, sigma_e=1-h2, log_likelihood=NA), pch=3, col='white', fill='white')
+heat
+
+#' 
+#' To find the values of $\sigma^2_g$ and $\sigma^2_e$ that maximize the log likelihood function, we can use the Newton optimization method. This method requires first order and second order derivatives of the likelihood function to iteratively calculate $\delta$ values, so that the new estimates $\sigma^2_g + \delta_g$ and $\sigma^2_e + \delta_e$ have a higher likelihood than the present estimates $\sigma^2_g$ and $\sigma^2_e$.
+#' 
+#' The computation of the second order derivative matrix (the Hessian matrix) is expensive, but it can be approximated by the average information matrix, which is why the procedure below is called the average information (AI) algorithm.
+#' 
+#' The difference between REML and normal maximum likelihood estimation lies in the definition of the likelihood function. When using the normal maximum likelihood function, the inclusion of fixed effects will lead to biased estimates of the variance components. Since we don't model any fixed effects here, we wouldn't see a big difference here between ML and REML.
+#' 
+#' Below is a very simple example of this method based on stripped down GCTA code, which uses the average information algorithm for optimization. It iteratively updates estimates of $\sigma^2_g$ and $\sigma^2_e$ until it converges (or until this case, for a fixed number of iterations).
+#' 
+## ----reml1---------------------------------------------------------------
+
+greml = function(A, y, varcmp=c(.95, .05), itermax=25) {
+  # estimates g and e variance components
+  # A: GRM
+  # y: phenotypes
+  out = varcmp
+  for(iter in 1:itermax) {
+    V = varcmp[1]*A + varcmp[2]*diag(nrow(A))
+    Vi = solve(V)
+    P = Vi - (colSums(Vi) %*% t(colSums(Vi))) / sum(Vi)
+    
+    Py = P %*% y
+    APy = A %*% Py
+    PPy = P %*% Py
+    
+    H = diag(2)
+    H[1,1] = t(APy) %*% P %*% APy
+    H[2,2] = t(Py) %*% PPy
+    H[1,2] = H[2,1] = t(APy) %*% PPy
+    Hi = solve(H + diag(2)*1e-6)
+    
+    R1 = t(Py) %*% APy - sum(P * A)
+    R2 = t(Py) %*% Py - sum(diag(P))
+    
+    delta = Hi %*% c(R1, R2)
+    varcmp = varcmp + 0.316*delta
+    varcmp = pmax(1e-3, varcmp) # avoid negative var component
+    out = rbind(out, varcmp)
+      
+    cat(paste0('Iteration ', iter, ': sigma_g = ', round(varcmp[1], 3),
+               ', sigma_e = ', round(varcmp[2], 3),
+               ', h2 = ', round(varcmp[1]/sum(varcmp), 3), '\n' ))
+  }
+  colnames(out) = c('sigma_g', 'sigma_e')
+  out
+}
+
+varcmp = greml(grm, y)
+
+
+#' 
+#' 
+## ----reml2, fig.width=6, fig.height=4, fig.cap='**GREML finds the maximum in the log likelihood function**'----
+dat = data.frame(varcmp, log_likelihood=mean(ll[,3],na.rm=TRUE),
+                 step=1:nrow(varcmp), row.names=NULL)
+val = round(varcmp[nrow(varcmp), 1]/sum(varcmp[nrow(varcmp),]), 2)
+heat + geom_point(data=dat[1:(nrow(dat)-10),], size=.5) +
+  geom_path(data=dat,
+            aes(sigma_g, sigma_e), colour='grey20', size=.1,
+            arrow = arrow(angle = 25, ends = "last", type = "closed", length=unit(5, 'mm'))) +
+  annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+           label=as.character(paste0(bquote(hat(h^2)~": "~ ~.(val)), collapse='')), parse=T)
+
+#' 
+#' \ 
+#' 
+#' ### BayesR
+#' 
+#' todo
+#' 
+#' \ 
+#' 
+#' ### LD score regression
+#' 
+#' We have previously stated that the variance of $\hat{\beta}_{j,GWAS}$ can be approximated as
+#' 
+#' $$var(\hat{\beta}_{j,GWAS}) = l_j \frac{h^2}{M} + \frac{1}{N}$$
+#' Because $var(X) = \mathbb{E}[X^2] - (\mathbb{E} [X])^2$ and $\mathbb{E} [\hat{\beta}_{j,GWAS}] = 0$, $var(\hat{\beta}_{j,GWAS}) = \mathbb{E} [\hat{\beta}^2_{j,GWAS}]$ and so
+#' 
+#' $$\mathbb{E} [\hat{\beta}^2_{j,GWAS}] = l_j \frac{h^2}{M} + \frac{1}{N}$$
+#' 
+#' Since $\hat{\chi}^2_j = \hat{z}_j^2 = N \hat{\beta}^2_{j,GWAS}$, it follows that
+#' 
+#' $$\mathbb{E}[\chi^2_j] = \frac{N h^2}{M} l_j + 1$$
+#' 
+#' 
+#' 
+#' 
+#' Intuitively, this is because GWAS estimates are marginal effect estimates and this means that SNPs in high LD will have similar effect estimates, even if their true effect sizes are very different. A single large effect SNP within a group of correlated SNPs can give each of the correlated SNPs a large effect estimate. If a SNP is in high LD with many other SNPs, its chances of picking up the signal of another SNP are increased. This means that a SNP's LD score should be correlated to its GWAS effect estimate, and the correlation should be proportional to the heritability of the trait in question.
+#' 
+#' 
+#' 
+#' 
+#' From this it follows that $h^2$ can be estimated as the slope in a regression of $\hat{\chi}^2_j$ on $l_j$:
+#' 
+#' $$\hat{h^2} = \frac{cov(\hat{\boldsymbol{\chi}}^2, \boldsymbol{l})}{var(\boldsymbol{l})} \frac{M}{N}$$
+#' 
+#' 
+#' What is not shown here, is that the intercept in this regression is informative as well, because it will be higher when the effect estimates are inflated due to population stratification rather than real effects.
+#' 
+#' The regression estimate can be made more efficient by constraining the intercept (if we assume there is no population stratification) and by weighting the regression by the inverse of the LD scores.
+#' 
+#' 
+## ----ldsc0---------------------------------------------------------------
+ldsc = function(ldscores, beta_gwas, n) {
+  m = length(ldscores)
+  chi2 = beta_gwas^2 * n
+  summary(lm(chi2-1 ~ ldscores + 0, weights=1/ldscores))$coefficients[1,1] * m/n
+}
+
+ldsc(ldscores, beta_gwas, n)
+ldsc(ldscoresld, beta_gwasld, n)
+
+#' 
+#' This probably didn't give a great estimates of heritability, because this is based on a very small sample size, and in the first case, almost no variance among the LD scores for different SNPs. Let's try it again with a larger data set with LD:
+#' 
+#' 
+#' 
+## ----ldsc1---------------------------------------------------------------
+
+mm = 20000
+nn = 5000
+mmunique = sqrt(mm*2)
+maf_block = runif(mmunique, 0, .5)
+x012_block = t(replicate(nn, rbinom(2*mmunique, 2, c(maf_block, maf_block))))
+polymorphic = apply(x012_block, 2, var) > 0
+x012_block = x012_block[,polymorphic][,1:mmunique]
+maf_block = c(maf_block, maf_block)[polymorphic][1:mmunique]
+
+# create haplotype blocks, so there is some variance in ld-scores
+x012_block = jitter(x012_block[,rep(1:mmunique,1:mmunique)[1:mm]], .4)
+x_block = scale(x012_block)
+
+# we can approximate ld-scores from how we simulated LD
+ldscores_block = rep(1:mmunique,1:mmunique)[1:mm]
+
+m_block = ncol(x_block)
+beta_block = rnorm(m_block, 0, sqrt(h2/m_block))
+g_block = x_block %*% beta_block
+y_block = g_block + rnorm(nn, 0, sqrt(1-h2))
+
+beta_gwas_block = t(x_block) %*% y_block / nn
+
+h2_est = ldsc(ldscores_block, beta_gwas_block, nn)
+h2_est
+
+#' 
+#' This should be closer to the true value of $h^2$. While this may not be as precise as the estimates from the other methods, LD score regression has the advantage of requiring only summary statistics data (effect estimates), not individual level genotype data. The LD scores can be estimated in a reference population.
+#' 
+#' 
+## ----ldsc2, fig.width=8, fig.height=4, fig.cap='**LD score regression visualized**'----
+
+chi2 = beta_gwas_block^2 * nn
+sl = summary(lm(chi2-1 ~ ldscores_block + 0, weights=1/ldscores_block))$coefficients[1,1]
+
+dat = data.frame(x=ldscores_block, y=chi2,
+                 gr=cut(ldscores_block, seq(min(ldscores_block), max(ldscores_block), length=30)))
+dat_groupmean = group_by(dat, gr) %>% summarise(x=mean(x), y=mean(y))
+
+val = round(h2_est, 2)
+layers = list(geom_abline(intercept=1, slope=sl, col='blue', size=1.0),
+              xlab('LD scores'),
+              ylab(expression(Chi^2)),
+              scale_colour_continuous(low='black', high='green'),
+              theme(legend.position = 'none'),
+              annotate('text', -Inf, Inf, hjust=-.2, vjust=1.2,
+                       label=as.character(paste0(bquote(hat(h^2)~": "~ ~.(val)),
+                                                 collapse='')), parse=T))
+p1 = ggplot(dat, aes(x, y, col=x)) + geom_point(size=.01) + layers
+p2 = ggplot(dat_groupmean, aes(x, y, col=x)) + geom_point() + layers
+
+grid.arrange(p1, p2, ncol=2)
+
+
+#' 
+#' **The left panel shows the LD score regression for all SNPs. The right panel groups SNPs by LD score and shows the mean $\chi^2$ value in each bin.**
+#' 
+#' \ 
+#' 
+#' ## Case control studies
+#' 
+#' todo
+#' 
+#' 
+#' \ 
+#' 
+#' ## Further reading
+#' 
+#' todo
+#' 
+#' 
